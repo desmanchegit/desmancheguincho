@@ -1,0 +1,1 @@
+- [Porting legacy full-stack apps into pnpm-workspace](porting-legacy-apps.md) — SQLite/legacy-DB apps can skip Postgres migration; import schema types via `@workspace/db/schema`, not `@workspace/db`, to avoid triggering the Postgres pool.

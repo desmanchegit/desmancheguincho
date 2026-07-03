@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Guia de Implementação — Central dos Desmanches</title>
+  <style>
+    :root {
+      --bg: #0a0e1a;
+      --bg2: #111827;
+      --bg3: #1c2433;
+      --border: #1e293b;
+      --accent: #3b82f6;
+      --accent2: #f59e0b;
+      --accent3: #10b981;
+      --accent4: #8b5cf6;
+      --accent5: #ef4444;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --text3: #64748b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; line-height: 1.65; }
+
+    /* ---- NAV ---- */
+    nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 60px; position: sticky; top: 0; z-index: 100; }
+    .nav-logo { font-size: 1.1rem; font-weight: 700; color: var(--accent); letter-spacing: -.5px; }
+    .nav-logo span { color: var(--accent2); }
+    .nav-badge { background: var(--accent); color: #fff; font-size: .65rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; letter-spacing: .5px; }
+
+    /* ---- HERO ---- */
+    .hero { background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%); border-bottom: 1px solid var(--border); padding: 4rem 2rem 3rem; text-align: center; }
+    .hero h1 { font-size: clamp(1.8rem, 4vw, 3rem); font-weight: 800; background: linear-gradient(135deg, #60a5fa, #a78bfa, #34d399); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: .75rem; }
+    .hero p { color: var(--text2); font-size: 1.05rem; max-width: 640px; margin: 0 auto 1.5rem; }
+    .hero-badges { display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; }
+    .badge { display: inline-flex; align-items: center; gap: .3rem; padding: 4px 12px; border-radius: 20px; font-size: .75rem; font-weight: 600; }
+    .badge-blue { background: rgba(59,130,246,.15); color: #60a5fa; border: 1px solid rgba(59,130,246,.3); }
+    .badge-green { background: rgba(16,185,129,.15); color: #34d399; border: 1px solid rgba(16,185,129,.3); }
+    .badge-purple { background: rgba(139,92,246,.15); color: #a78bfa; border: 1px solid rgba(139,92,246,.3); }
+    .badge-yellow { background: rgba(245,158,11,.15); color: #fbbf24; border: 1px solid rgba(245,158,11,.3); }
+    .badge-red { background: rgba(239,68,68,.15); color: #f87171; border: 1px solid rgba(239,68,68,.3); }
+
+    /* ---- LAYOUT ---- */
+    .container { max-width: 1100px; margin: 0 auto; padding: 2.5rem 1.5rem; }
+
+    /* ---- TOC ---- */
+    .toc { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 2.5rem; }
+    .toc h2 { font-size: .85rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text3); margin-bottom: 1rem; }
+    .toc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .4rem; }
+    .toc a { color: var(--text2); text-decoration: none; font-size: .875rem; padding: .35rem .5rem; border-radius: 6px; display: block; transition: all .15s; }
+    .toc a:hover { background: rgba(59,130,246,.1); color: var(--accent); }
+
+    /* ---- SECTIONS ---- */
+    section { margin-bottom: 3rem; scroll-margin-top: 80px; }
+    .section-header { display: flex; align-items: center; gap: .75rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
+    .section-icon { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+    .icon-blue { background: rgba(59,130,246,.15); }
+    .icon-green { background: rgba(16,185,129,.15); }
+    .icon-purple { background: rgba(139,92,246,.15); }
+    .icon-yellow { background: rgba(245,158,11,.15); }
+    .icon-red { background: rgba(239,68,68,.15); }
+    .icon-cyan { background: rgba(6,182,212,.15); }
+    h2.section-title { font-size: 1.4rem; font-weight: 700; }
+    h3 { font-size: 1.05rem; font-weight: 600; color: var(--text); margin: 1.5rem 0 .75rem; }
+
+    /* ---- CARDS ---- */
+    .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+    .card h4 { font-size: .95rem; font-weight: 600; margin-bottom: .4rem; display: flex; align-items: center; gap: .4rem; }
+    .card p { color: var(--text2); font-size: .875rem; }
+
+    /* ---- PANEL BLOCKS ---- */
+    .panel { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 1.5rem; }
+    .panel-header { padding: 1rem 1.25rem; display: flex; align-items: center; gap: .6rem; font-weight: 700; font-size: .95rem; }
+    .panel-header-blue { background: rgba(59,130,246,.1); border-bottom: 1px solid rgba(59,130,246,.2); }
+    .panel-header-green { background: rgba(16,185,129,.1); border-bottom: 1px solid rgba(16,185,129,.2); }
+    .panel-header-purple { background: rgba(139,92,246,.1); border-bottom: 1px solid rgba(139,92,246,.2); }
+    .panel-body { padding: 1.25rem; background: var(--bg2); }
+    .tab-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .6rem; }
+    .tab-item { display: flex; align-items: flex-start; gap: .6rem; padding: .75rem; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; }
+    .tab-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 2px; }
+    .tab-info h5 { font-size: .85rem; font-weight: 600; margin-bottom: .2rem; }
+    .tab-info p { font-size: .775rem; color: var(--text2); }
+
+    /* ---- API TABLE ---- */
+    .api-section { margin-bottom: 1.5rem; }
+    .api-section h3 { font-size: .85rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text3); margin: 0 0 .6rem; }
+    .api-row { display: flex; align-items: center; gap: .75rem; padding: .55rem .75rem; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; margin-bottom: .35rem; font-size: .83rem; }
+    .method { font-weight: 700; font-size: .72rem; padding: 2px 7px; border-radius: 5px; letter-spacing: .5px; min-width: 48px; text-align: center; }
+    .m-get { background: rgba(16,185,129,.15); color: #34d399; }
+    .m-post { background: rgba(59,130,246,.15); color: #60a5fa; }
+    .m-patch { background: rgba(245,158,11,.15); color: #fbbf24; }
+    .m-delete { background: rgba(239,68,68,.15); color: #f87171; }
+    .api-path { font-family: 'JetBrains Mono', 'Fira Code', monospace; color: var(--text); }
+    .api-desc { color: var(--text2); margin-left: auto; text-align: right; font-size: .78rem; }
+    .api-auth { font-size: .68rem; padding: 1px 6px; border-radius: 4px; }
+    .auth-client { background: rgba(16,185,129,.1); color: #34d399; border: 1px solid rgba(16,185,129,.2); }
+    .auth-desmanche { background: rgba(59,130,246,.1); color: #60a5fa; border: 1px solid rgba(59,130,246,.2); }
+    .auth-admin { background: rgba(139,92,246,.1); color: #a78bfa; border: 1px solid rgba(139,92,246,.2); }
+    .auth-public { background: rgba(100,116,139,.1); color: #94a3b8; border: 1px solid rgba(100,116,139,.2); }
+    .auth-any { background: rgba(245,158,11,.1); color: #fbbf24; border: 1px solid rgba(245,158,11,.2); }
+
+    /* ---- SCHEMA TABLE ---- */
+    .schema-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    .schema-table th { text-align: left; padding: .5rem .75rem; background: var(--bg3); color: var(--text3); font-size: .72rem; text-transform: uppercase; letter-spacing: .8px; border-bottom: 1px solid var(--border); }
+    .schema-table td { padding: .5rem .75rem; border-bottom: 1px solid rgba(30,41,59,.6); }
+    .schema-table tr:last-child td { border-bottom: none; }
+    .schema-table tr:hover td { background: rgba(255,255,255,.02); }
+    .col-name { font-family: monospace; color: #60a5fa; }
+    .col-type { color: #a78bfa; font-size: .78rem; }
+    .col-note { color: var(--text2); }
+
+    /* ---- FLOW ---- */
+    .flow { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; padding: 1.25rem; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; }
+    .flow-step { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: .5rem .9rem; font-size: .82rem; font-weight: 500; white-space: nowrap; }
+    .flow-arrow { color: var(--text3); font-size: 1.1rem; }
+    .flow-step.active { border-color: var(--accent); color: var(--accent); }
+    .flow-step.warn { border-color: var(--accent2); color: var(--accent2); }
+    .flow-step.success { border-color: var(--accent3); color: var(--accent3); }
+    .flow-step.danger { border-color: var(--accent5); color: var(--accent5); }
+    .flow-step.purple { border-color: var(--accent4); color: var(--accent4); }
+
+    /* ---- CRED BOX ---- */
+    .cred-box { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; font-family: monospace; font-size: .83rem; margin-bottom: .5rem; }
+    .cred-row { display: flex; gap: 1rem; align-items: center; margin-bottom: .3rem; }
+    .cred-key { color: var(--text3); min-width: 90px; }
+    .cred-val { color: #34d399; }
+
+    /* ---- ENV ---- */
+    .env-row { display: flex; gap: .75rem; padding: .5rem .75rem; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; margin-bottom: .35rem; font-size: .83rem; align-items: center; }
+    .env-name { font-family: monospace; color: #fbbf24; min-width: 200px; }
+    .env-desc { color: var(--text2); }
+    .env-required { color: #f87171; font-size: .72rem; margin-left: auto; }
+    .env-optional { color: #34d399; font-size: .72rem; margin-left: auto; }
+
+    /* ---- INFO GRID ---- */
+    .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .info-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; text-align: center; }
+    .info-card .num { font-size: 2rem; font-weight: 800; }
+    .info-card .lbl { font-size: .75rem; color: var(--text3); text-transform: uppercase; letter-spacing: .8px; }
+    .num-blue { color: #60a5fa; }
+    .num-green { color: #34d399; }
+    .num-purple { color: #a78bfa; }
+    .num-yellow { color: #fbbf24; }
+
+    /* ---- FOOTER ---- */
+    footer { background: var(--bg2); border-top: 1px solid var(--border); padding: 2rem; text-align: center; color: var(--text3); font-size: .82rem; margin-top: 3rem; }
+
+    /* ---- UTIL ---- */
+    .divider { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+    .text-muted { color: var(--text2); }
+    .text-sm { font-size: .82rem; }
+    @media (max-width: 640px) { .api-desc { display: none; } .flow { flex-direction: column; align-items: flex-start; } }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">Central dos <span>Desmanches</span></div>
+  <div class="nav-badge">GUIA v1.0</div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <h1>Guia de Implementação Completo</h1>
+  <p>Documentação técnica de todas as funcionalidades, painéis, APIs e integrações do sistema Central dos Desmanches.</p>
+  <div class="hero-badges">
+    <span class="badge badge-blue">⚛️ React 19 + Vite</span>
+    <span class="badge badge-green">🟢 Node.js + Express</span>
+    <span class="badge badge-purple">🗄️ SQLite + Drizzle ORM</span>
+    <span class="badge badge-yellow">💳 Asaas Payments</span>
+    <span class="badge badge-red">🔐 JWT Auth</span>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="container">
+
+  <!-- TOC -->
+  <div class="toc">
+    <h2>Índice</h2>
+    <div class="toc-grid">
+      <a href="#visao-geral">1. Visão Geral</a>
+      <a href="#arquitetura">2. Arquitetura & Stack</a>
+      <a href="#fluxo-negocio">3. Fluxo de Negócio</a>
+      <a href="#autenticacao">4. Autenticação</a>
+      <a href="#painel-admin">5. Painel Admin</a>
+      <a href="#painel-desmanche">6. Painel Desmanche</a>
+      <a href="#painel-cliente">7. Painel Cliente</a>
+      <a href="#banco-dados">8. Banco de Dados</a>
+      <a href="#api">9. Todas as Rotas API</a>
+      <a href="#integracao-asaas">10. Integração Asaas</a>
+      <a href="#apis-externas">11. APIs Externas Gratuitas</a>
+      <a href="#variaveis">12. Variáveis de Ambiente</a>
+      <a href="#credenciais">13. Credenciais de Teste</a>
+    </div>
+  </div>
+
+  <!-- ======== 1. VISÃO GERAL ======== -->
+  <section id="visao-geral">
+    <div class="section-header">
+      <div class="section-icon icon-blue">🏭</div>
+      <h2 class="section-title">1. Visão Geral do Sistema</h2>
+    </div>
+    <p class="text-muted" style="margin-bottom:1.25rem;">
+      <strong>Central dos Desmanches</strong> é um marketplace SaaS B2C2B brasileiro que conecta
+      <strong>desmanches credenciados</strong> (ferros-velhos de peças auto) com <strong>clientes e oficinas</strong>
+      que buscam peças originais. O modelo de negócio cobra assinatura mensal dos desmanches para acesso às
+      solicitações dos clientes, além de uma taxa por negociação concluída.
+    </p>
+    <div class="info-grid">
+      <div class="info-card"><div class="num num-blue">3</div><div class="lbl">Painéis</div></div>
+      <div class="info-card"><div class="num num-green">63</div><div class="lbl">Rotas API</div></div>
+      <div class="info-card"><div class="num num-purple">13</div><div class="lbl">Tabelas DB</div></div>
+      <div class="info-card"><div class="num num-yellow">1</div><div class="lbl">Integração de Pagamento</div></div>
+    </div>
+    <div class="card-grid">
+      <div class="card">
+        <h4>🏠 Landing Page</h4>
+        <p>Página pública com hero, como funciona, para desmanches, central de leilões, status ao vivo. Rotas: <code>/</code>, <code>/como-funciona</code>, <code>/central-de-leiloes</code>.</p>
+      </div>
+      <div class="card">
+        <h4>🔐 Registro Desmanche</h4>
+        <p>Wizard multi-etapa em <code>/cadastro-desmanche</code>: dados básicos → plano → documentação → aprovação admin.</p>
+      </div>
+      <div class="card">
+        <h4>👤 Registro Cliente</h4>
+        <p>Cadastro simples em <code>/cadastro</code> com nome, e-mail, senha, WhatsApp e localização.</p>
+      </div>
+      <div class="card">
+        <h4>✅ 100% Credenciados</h4>
+        <p>Todos os desmanches passam por verificação de documentos (CNPJ, Detran, Alvará) antes de serem ativados pelo admin.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== 2. ARQUITETURA ======== -->
+  <section id="arquitetura">
+    <div class="section-header">
+      <div class="section-icon icon-purple">⚙️</div>
+      <h2 class="section-title">2. Arquitetura & Stack</h2>
+    </div>
+    <div class="card-grid">
+      <div class="card">
+        <h4>⚛️ Frontend</h4>
+        <p><strong>React 19</strong> + <strong>Vite</strong><br/>Tailwind CSS v3 · shadcn/ui · Lucide Icons · Wouter (roteamento) · TanStack Query v5 · Radix UI</p>
+      </div>
+      <div class="card">
+        <h4>🟢 Backend</h4>
+        <p><strong>Node.js</strong> + <strong>Express.js</strong><br/>tsx (TypeScript runtime) · Drizzle ORM · better-sqlite3 · Multer (uploads) · bcryptjs · jsonwebtoken</p>
+      </div>
+      <div class="card">
+        <h4>🗄️ Banco de Dados</h4>
+        <p><strong>SQLite</strong> (arquivo local <code>./database.db</code>)<br/>Schema gerenciado via <strong>Drizzle ORM</strong> com migrations automáticas no boot.</p>
+      </div>
+      <div class="card">
+        <h4>📁 Estrutura de Arquivos</h4>
+        <p><code>client/src/</code> — Frontend React<br/><code>server/</code> — Express + storage<br/><code>shared/schema.ts</code> — Schema compartilhado<br/><code>uploads/</code> — Arquivos enviados</p>
+      </div>
+      <div class="card">
+        <h4>🔑 Autenticação</h4>
+        <p>JWT no <code>localStorage</code> (<code>peca_rapida_token</code>). Endpoints separados para clientes (<code>/api/auth/login</code>) e desmanches (<code>/api/auth/login-desmanche</code>).</p>
+      </div>
+      <div class="card">
+        <h4>🚀 Servidor</h4>
+        <p>Porta <strong>5000</strong>. Em desenvolvimento: proxy Vite. Em produção: Express serve o build estático do React + todas as APIs.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== 3. FLUXO DE NEGÓCIO ======== -->
+  <section id="fluxo-negocio">
+    <div class="section-header">
+      <div class="section-icon icon-green">🔄</div>
+      <h2 class="section-title">3. Fluxo de Negócio</h2>
+    </div>
+
+    <h3>Fluxo Principal — Pedido de Cliente</h3>
+    <div class="flow">
+      <span class="flow-step active">1. Cliente cria pedido</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">2. Desmanches visualizam no mural</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step warn">3. Desmanche envia proposta</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step active">4. Cliente aceita proposta</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step purple">5. Negociação criada (chat habilitado)</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step warn">6. Desmanche marca como Enviado</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step active">7. Cliente confirma recebimento</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step danger">8. Gate de Avaliação (prazo 7 dias)</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step success">9. Avaliação → Negociação Concluída</span>
+    </div>
+
+    <h3>Fluxo Anúncio por Desmanche (Novo)</h3>
+    <div class="flow">
+      <span class="flow-step active">1. Desmanche publica anúncio</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step">2. Clientes visualizam no marketplace</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step warn">3. Cliente clica "Comprar" → /buy</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step purple">4. Negociação criada diretamente</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step success">5. Mesmo fluxo de envio/recebimento</span>
+    </div>
+    <p class="text-sm text-muted" style="margin-top:.75rem;">Anúncios de desmanche expiram automaticamente em <strong>72 horas</strong> se não houver compra. O desmanche pode reativar o anúncio a qualquer momento.</p>
+
+    <h3>Fluxo de Aprovação de Desmanche</h3>
+    <div class="flow">
+      <span class="flow-step">1. Cadastro com dados da empresa</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step warn">2. Upload de documentos (CNPJ, Detran, Alvará)</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step purple">3. Status: pendente</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step active">4. Admin verifica e aprova/rejeita</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-step success">5. Desmanche ativo — acessa o painel</span>
+    </div>
+
+    <h3>Gate de Avaliação</h3>
+    <p class="text-sm text-muted" style="margin-bottom:.75rem;">Após o cliente confirmar recebimento, um prazo de 7 dias é iniciado para avaliação. Se o prazo expirar sem avaliação, conta como atraso. Com N avaliações atrasadas (configurável pelo admin), o desmanche é bloqueado de enviar novas propostas.</p>
+  </section>
+
+  <!-- ======== 4. AUTENTICAÇÃO ======== -->
+  <section id="autenticacao">
+    <div class="section-header">
+      <div class="section-icon icon-red">🔐</div>
+      <h2 class="section-title">4. Autenticação & Sessões</h2>
+    </div>
+    <div class="card-grid">
+      <div class="card">
+        <h4>🔑 JWT Token</h4>
+        <p>Token JWT armazenado em <code>localStorage</code> com a chave <code>peca_rapida_token</code>. Todas as requisições protegidas enviam o token no header <code>Authorization: Bearer TOKEN</code>.</p>
+      </div>
+      <div class="card">
+        <h4>👤 Tipos de Usuário</h4>
+        <p><strong>client</strong> — Clientes que buscam peças<br/><strong>desmanche</strong> — Empresas de desmanche credenciadas<br/><strong>admin</strong> — Administradores da plataforma</p>
+      </div>
+      <div class="card">
+        <h4>🔒 Middleware de Permissão</h4>
+        <p><code>authMiddleware</code> valida JWT.<br/><code>requireType(["client"])</code> restringe por tipo.<br/>Desmanches precisam de status <code>active</code> para operar.</p>
+      </div>
+      <div class="card">
+        <h4>🔗 Endpoints de Auth</h4>
+        <p><code>POST /api/auth/login</code> — clientes/admin<br/><code>POST /api/auth/login-desmanche</code> — desmanches<br/><code>POST /api/auth/register</code> — novo cliente<br/><code>POST /api/auth/register-desmanche</code> — novo desmanche</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== 5. PAINEL ADMIN ======== -->
+  <section id="painel-admin">
+    <div class="section-header">
+      <div class="section-icon icon-purple">🛡️</div>
+      <h2 class="section-title">5. Painel Admin</h2>
+    </div>
+    <p class="text-muted" style="margin-bottom:1.25rem;">Rota: <code>/admin</code> · Acesso: usuários com <code>type = "admin"</code> · Estado da aba persistido via <code>localStorage</code> (chave: <code>admin_tab</code>)</p>
+
+    <div class="panel">
+      <div class="panel-header panel-header-purple">🛡️ Abas do Painel Admin</div>
+      <div class="panel-body">
+        <div class="tab-list">
+          <div class="tab-item">
+            <div class="tab-icon">📊</div>
+            <div class="tab-info">
+              <h5>Visão Geral</h5>
+              <p>Estatísticas em tempo real: total de desmanches ativos, pedidos abertos, usuários cadastrados, negociações em andamento, receita do mês, avaliações pendentes.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">🏭</div>
+            <div class="tab-info">
+              <h5>Desmanches</h5>
+              <p>Lista todos os desmanches cadastrados com filtros por status (pendente, ativo, rejeitado). Ações: aprovar, rejeitar, ver detalhes.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">✅</div>
+            <div class="tab-info">
+              <h5>Aprovações</h5>
+              <p>Fila de aprovação de documentos enviados pelos desmanches. Badge com contador de pendentes. Aceitar/rejeitar documentos individualmente.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">👥</div>
+            <div class="tab-info">
+              <h5>Pessoas Cadastradas</h5>
+              <p>Listagem de todos os clientes cadastrados na plataforma com dados de contato e data de cadastro.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">📦</div>
+            <div class="tab-info">
+              <h5>Anúncios / Pedidos</h5>
+              <p>Moderação de todos os pedidos de peças e anúncios de desmanches. Filtros por status e tipo.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">🔨</div>
+            <div class="tab-info">
+              <h5>Central de Leilões</h5>
+              <p>Gestão de lotes de leilão. Criar novos leilões, visualizar ativos/finalizados.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">💰</div>
+            <div class="tab-info">
+              <h5>Assinaturas & Receitas</h5>
+              <p>Visão financeira completa: receita total, assinaturas ativas, inadimplentes, histórico de transações. Dados reais do Asaas quando configurado.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">📋</div>
+            <div class="tab-info">
+              <h5>Planos</h5>
+              <p>CRUD completo de planos de assinatura. Criar, editar, ativar/desativar planos. Campos: nome, preço, intervalo, limite de propostas, recursos.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">⚙️</div>
+            <div class="tab-info">
+              <h5>Configurações</h5>
+              <p>Configurações globais do sistema: número máximo de avaliações atrasadas antes do bloqueio, prazo de avaliação em dias, taxa por negociação.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== 6. PAINEL DESMANCHE ======== -->
+  <section id="painel-desmanche">
+    <div class="section-header">
+      <div class="section-icon icon-blue">🏭</div>
+      <h2 class="section-title">6. Painel Desmanche</h2>
+    </div>
+    <p class="text-muted" style="margin-bottom:1.25rem;">Rota: <code>/desmanche</code> · Acesso: desmanches com status <code>active</code> · Estado da aba persistido via <code>localStorage</code> (chave: <code>desmanche_tab</code>)</p>
+
+    <div class="panel">
+      <div class="panel-header panel-header-blue">🏭 Abas do Painel Desmanche</div>
+      <div class="panel-body">
+        <div class="tab-list">
+          <div class="tab-item">
+            <div class="tab-icon">📊</div>
+            <div class="tab-info">
+              <h5>Meu Painel</h5>
+              <p>Overview com métricas: propostas enviadas, negociações ativas, avaliação média, status de assinatura. Alerta de bloqueio quando há avaliações atrasadas.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">🔔</div>
+            <div class="tab-info">
+              <h5>Mural de Pedidos</h5>
+              <p>Feed em tempo real de solicitações de peças de clientes. Filtros por tipo de veículo, urgência. Enviar proposta (preço + mensagem). Badge "Parceiro" em anúncios de outros desmanches.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">📢</div>
+            <div class="tab-info">
+              <h5>Meus Anúncios</h5>
+              <p>Publicar peças disponíveis no estoque. Sub-abas: Ativos / Desativados. Contador de expiração (72h). Botão "Reativar Anúncio" para anúncios expirados.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">🤝</div>
+            <div class="tab-info">
+              <h5>Minhas Negociações</h5>
+              <p>Acompanhar negociações em andamento. Marcar como "Enviado" com código de rastreio. Visualizar status: negociando → enviado → aguardando avaliação → concluído.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">💬</div>
+            <div class="tab-info">
+              <h5>Mensagens</h5>
+              <p>Chat interno por negociação. Histórico de mensagens. Desbloqueio de WhatsApp do cliente após pagamento de taxa.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">📄</div>
+            <div class="tab-info">
+              <h5>Minha Documentação</h5>
+              <p>Upload e acompanhamento dos documentos obrigatórios: CNPJ, Licença Detran, Alvará Municipal, Contrato Social. Status: pendente, aprovado, rejeitado.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">💳</div>
+            <div class="tab-info">
+              <h5>Assinatura & Faturas</h5>
+              <p>Status do plano ativo, próxima cobrança, histórico de faturas. Link de pagamento via Asaas (Pix ou Boleto). Alertas de pagamento pendente/vencido.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">🏢</div>
+            <div class="tab-info">
+              <h5>Perfil da Empresa</h5>
+              <p>Editar nome fantasia, CNPJ, descrição, especialidades, logo, WhatsApp, endereço completo (CEP, rua, cidade, estado).</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Bloqueio por Avaliações Atrasadas</h3>
+    <div class="card">
+      <h4>⚠️ Sistema de Bloqueio</h4>
+      <p>Quando o desmanche possui avaliações atrasadas acima do limite configurado pelo admin, ele é bloqueado de enviar novas propostas. O banner de bloqueio aparece no Mural de Pedidos e nas Negociações. O bloqueio é removido automaticamente quando as avaliações são concluídas.</p>
+    </div>
+  </section>
+
+  <!-- ======== 7. PAINEL CLIENTE ======== -->
+  <section id="painel-cliente">
+    <div class="section-header">
+      <div class="section-icon icon-green">👤</div>
+      <h2 class="section-title">7. Painel Cliente</h2>
+    </div>
+    <p class="text-muted" style="margin-bottom:1.25rem;">Rota: <code>/cliente</code> · Acesso: usuários com <code>type = "client"</code> · Estado da aba persistido via <code>localStorage</code> (chave: <code>client_tab</code>)</p>
+
+    <div class="panel">
+      <div class="panel-header panel-header-green">👤 Abas do Painel Cliente</div>
+      <div class="panel-body">
+        <div class="tab-list">
+          <div class="tab-item">
+            <div class="tab-icon">📊</div>
+            <div class="tab-info">
+              <h5>Meu Painel</h5>
+              <p>Overview do cliente: pedidos ativos, propostas recebidas, negociações em andamento, histórico de compras.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">👤</div>
+            <div class="tab-info">
+              <h5>Meu Perfil</h5>
+              <p>Editar nome, e-mail, WhatsApp e endereço completo.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">📦</div>
+            <div class="tab-info">
+              <h5>Meus Pedidos</h5>
+              <p>Criar novos pedidos (Wizard multi-etapa: tipo de veículo, marca/modelo, ano, peça, fotos, localização, urgência). Listar pedidos existentes com status. <strong>Badge de expiração</strong> em pedidos abertos/negociando. Status "Expirado" visível.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">💬</div>
+            <div class="tab-info">
+              <h5>Propostas</h5>
+              <p>Visualizar propostas recebidas dos desmanches. Aceitar ou rejeitar. Ver preço, mensagem e nome do desmanche. Desbloquear WhatsApp do vendedor após aceite.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">🤝</div>
+            <div class="tab-info">
+              <h5>Negociações</h5>
+              <p>Acompanhar negociações em andamento. Confirmar recebimento da peça. <strong>Gate de Avaliação:</strong> após confirmar recebimento, prazo de 7 dias para avaliar o desmanche (1-5 estrelas + comentário). Banner de bloqueio se houver avaliações atrasadas.</p>
+            </div>
+          </div>
+          <div class="tab-item">
+            <div class="tab-icon">💬</div>
+            <div class="tab-info">
+              <h5>Mensagens</h5>
+              <p>Chat interno com o desmanche por negociação. Histórico completo de mensagens.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Wizard de Criação de Pedido</h3>
+    <div class="card">
+      <h4>📋 Etapas do Wizard</h4>
+      <p><strong>Passo 1:</strong> Tipo de veículo (carro, moto, caminhão, ônibus, van, barco, avião, helicóptero, bicicleta, trator, outro)<br/>
+      <strong>Passo 2:</strong> Marca e Modelo via API FIPE (<code>https://parallelum.com.br/fipe/api/v1/</code>)<br/>
+      <strong>Passo 3:</strong> Ano, placa, cor, motor (opcionais)<br/>
+      <strong>Passo 4:</strong> Categoria da peça, nome, posição, condição aceita<br/>
+      <strong>Passo 5:</strong> Fotos (upload múltiplo)<br/>
+      <strong>Passo 6:</strong> Localização, urgência (normal/urgente), descrição<br/>
+      <strong>Resultado:</strong> Pedido publicado no mural com expiração de 72h</p>
+    </div>
+  </section>
+
+  <!-- ======== 8. BANCO DE DADOS ======== -->
+  <section id="banco-dados">
+    <div class="section-header">
+      <div class="section-icon icon-yellow">🗄️</div>
+      <h2 class="section-title">8. Banco de Dados</h2>
+    </div>
+    <p class="text-muted" style="margin-bottom:1.25rem;">SQLite · Arquivo: <code>./database.db</code> · Schema: <code>shared/schema.ts</code> · ORM: Drizzle</p>
+
+    <div class="card" style="overflow-x:auto;">
+      <table class="schema-table">
+        <thead>
+          <tr>
+            <th>Tabela</th>
+            <th>Descrição</th>
+            <th>Colunas Principais</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="col-name">users</td>
+            <td class="col-note">Clientes e admins</td>
+            <td class="col-type">id, name, email, password, type (client|admin), whatsapp, profile_complete</td>
+          </tr>
+          <tr>
+            <td class="col-name">desmanches</td>
+            <td class="col-note">Empresas de desmanche</td>
+            <td class="col-type">id, trading_name, cnpj, email, status (pending|active|rejected), asaas_customer_id, rating, rating_count</td>
+          </tr>
+          <tr>
+            <td class="col-name">subscription_plans</td>
+            <td class="col-note">Planos de assinatura SaaS</td>
+            <td class="col-type">id, name, price, interval (monthly|quarterly|yearly), max_proposals, features[], is_active</td>
+          </tr>
+          <tr>
+            <td class="col-name">desmanche_billing</td>
+            <td class="col-note">Assinatura ativa do desmanche</td>
+            <td class="col-type">id, desmanche_id, plan_id, status (active|suspended|cancelled), next_billing_date, asaas_customer_id</td>
+          </tr>
+          <tr>
+            <td class="col-name">billing_transactions</td>
+            <td class="col-note">Histórico de faturas</td>
+            <td class="col-type">id, desmanche_id, amount, status (pending|paid|failed), asaas_charge_id, invoice_url, due_date</td>
+          </tr>
+          <tr>
+            <td class="col-name">system_settings</td>
+            <td class="col-note">Configurações globais</td>
+            <td class="col-type">id, key, value — ex: maxOverdueBeforeBlock, reviewDeadlineDays, negotiationFeePercent</td>
+          </tr>
+          <tr>
+            <td class="col-name">orders</td>
+            <td class="col-note">Pedidos/Anúncios de peças</td>
+            <td class="col-type">id, title, description, vehicle_brand/model/year, part_name/category, client_id (nullable), desmanche_id, posted_by_type (client|desmanche), status (open|negotiating|shipped|completed|cancelled|expired), expires_at</td>
+          </tr>
+          <tr>
+            <td class="col-name">order_images</td>
+            <td class="col-note">Fotos dos pedidos</td>
+            <td class="col-type">id, order_id, url</td>
+          </tr>
+          <tr>
+            <td class="col-name">proposals</td>
+            <td class="col-note">Propostas de desmanches</td>
+            <td class="col-type">id, order_id, desmanche_id, price, message, status (sent|accepted|rejected|withdrawn), whatsapp_unlocked</td>
+          </tr>
+          <tr>
+            <td class="col-name">negotiations</td>
+            <td class="col-note">Negociações em andamento</td>
+            <td class="col-type">id, order_id, proposal_id, client_id, desmanche_id, price, status (negotiating|paid|shipped|awaiting_review|completed|cancelled), tracking_code, received_at, review_deadline_at</td>
+          </tr>
+          <tr>
+            <td class="col-name">reviews</td>
+            <td class="col-note">Avaliações de desmanches</td>
+            <td class="col-type">id, negotiation_id, client_id, desmanche_id, rating (1-5), comment, created_at</td>
+          </tr>
+          <tr>
+            <td class="col-name">chat_rooms</td>
+            <td class="col-note">Salas de chat por proposta</td>
+            <td class="col-type">id, proposal_id, order_id, client_id, desmanche_id</td>
+          </tr>
+          <tr>
+            <td class="col-name">chat_messages</td>
+            <td class="col-note">Mensagens do chat</td>
+            <td class="col-type">id, room_id, sender_id, sender_type, content, created_at</td>
+          </tr>
+          <tr>
+            <td class="col-name">documents</td>
+            <td class="col-note">Documentos dos desmanches</td>
+            <td class="col-type">id, desmanche_id, type (cnpj|detran|alvara|contrato), url, status (pending|approved|rejected), valid_until</td>
+          </tr>
+          <tr>
+            <td class="col-name">auctions</td>
+            <td class="col-note">Leilões</td>
+            <td class="col-type">id, title, description, starting_price, current_bid, status, ends_at</td>
+          </tr>
+          <tr>
+            <td class="col-name">desmanche_addresses</td>
+            <td class="col-note">Endereços dos desmanches</td>
+            <td class="col-type">id, desmanche_id, cep, street, number, city, state</td>
+          </tr>
+          <tr>
+            <td class="col-name">user_addresses</td>
+            <td class="col-note">Endereços dos clientes</td>
+            <td class="col-type">id, user_id, cep, street, number, city, state</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ======== 9. API ======== -->
+  <section id="api">
+    <div class="section-header">
+      <div class="section-icon icon-cyan">🔌</div>
+      <h2 class="section-title">9. Todas as Rotas da API</h2>
+    </div>
+    <p class="text-muted" style="margin-bottom:1.5rem;">Base URL: <code>http://localhost:5000</code> (dev) · Headers obrigatórios: <code>Authorization: Bearer TOKEN</code> · <code>Content-Type: application/json</code></p>
+
+    <div class="api-section">
+      <h3>🔐 Autenticação</h3>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/auth/login</span><span class="api-auth auth-public">público</span><span class="api-desc">Login de clientes/admins</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/auth/login-desmanche</span><span class="api-auth auth-public">público</span><span class="api-desc">Login de desmanches</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/auth/register</span><span class="api-auth auth-public">público</span><span class="api-desc">Registrar novo cliente</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/auth/register-desmanche</span><span class="api-auth auth-public">público</span><span class="api-desc">Registrar novo desmanche</span></div>
+    </div>
+
+    <div class="api-section">
+      <h3>👤 Usuários / Clientes</h3>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/users/me</span><span class="api-auth auth-client">client</span><span class="api-desc">Dados do usuário autenticado</span></div>
+      <div class="api-row"><span class="method m-patch">PATCH</span><span class="api-path">/api/users/me</span><span class="api-auth auth-client">client</span><span class="api-desc">Atualizar perfil do usuário</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/users/me/address</span><span class="api-auth auth-client">client</span><span class="api-desc">Endereço do usuário</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/admin/users</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Listar todos os clientes</span></div>
+    </div>
+
+    <div class="api-section">
+      <h3>🏭 Desmanches</h3>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/desmanches</span><span class="api-auth auth-public">público</span><span class="api-desc">Listar desmanches ativos</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/desmanches/me</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Perfil do desmanche autenticado</span></div>
+      <div class="api-row"><span class="method m-patch">PATCH</span><span class="api-path">/api/desmanches/me</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Atualizar perfil do desmanche</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/desmanches/me/address</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Endereço do desmanche</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/desmanches/:id</span><span class="api-auth auth-any">auth</span><span class="api-desc">Detalhes de um desmanche</span></div>
+      <div class="api-row"><span class="method m-patch">PATCH</span><span class="api-path">/api/desmanches/:id/status</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Aprovar/rejeitar desmanche</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/admin/desmanches</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Listar todos (admin)</span></div>
+    </div>
+
+    <div class="api-section">
+      <h3>📦 Pedidos & Anúncios</h3>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/orders</span><span class="api-auth auth-any">auth</span><span class="api-desc">Mural público de pedidos abertos</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/orders/my</span><span class="api-auth auth-client">client</span><span class="api-desc">Meus pedidos (cliente)</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/orders/my-ads</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Meus anúncios (desmanche)</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/orders/:id</span><span class="api-auth auth-any">auth</span><span class="api-desc">Detalhes de um pedido</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/orders</span><span class="api-auth auth-any">client|desmanche</span><span class="api-desc">Criar pedido ou anúncio. Body: isDesmancheAd=true para anúncios</span></div>
+      <div class="api-row"><span class="method m-patch">PATCH</span><span class="api-path">/api/orders/:id/status</span><span class="api-auth auth-any">owner|admin</span><span class="api-desc">Atualizar status (cancelar etc.)</span></div>
+      <div class="api-row"><span class="method m-patch">PATCH</span><span class="api-path">/api/orders/:id/reactivate</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Reativar anúncio expirado</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/orders/:id/buy</span><span class="api-auth auth-client">client</span><span class="api-desc">Comprar diretamente de anúncio de desmanche (cria negociação)</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/orders/:id/images</span><span class="api-auth auth-any">owner</span><span class="api-desc">Upload de fotos do pedido</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/admin/orders</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Todos os pedidos (admin)</span></div>
+    </div>
+
+    <div class="api-section">
+      <h3>💬 Propostas</h3>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/proposals</span><span class="api-auth auth-any">auth</span><span class="api-desc">Listar propostas (por orderId ou desmancheId)</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/proposals</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Enviar proposta. Guard: não pode propor no próprio anúncio</span></div>
+      <div class="api-row"><span class="method m-patch">PATCH</span><span class="api-path">/api/proposals/:id/status</span><span class="api-auth auth-any">client|desmanche</span><span class="api-desc">Aceitar/rejeitar proposta. Aceite cria negociação automaticamente</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/proposals/:id/unlock-whatsapp</span><span class="api-auth auth-client">client</span><span class="api-desc">Desbloquear WhatsApp do desmanche</span></div>
+    </div>
+
+    <div class="api-section">
+      <h3>🤝 Negociações</h3>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/negotiations</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Negociações do desmanche autenticado</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/negotiations/my</span><span class="api-auth auth-client">client</span><span class="api-desc">Negociações do cliente autenticado</span></div>
+      <div class="api-row"><span class="method m-patch">PATCH</span><span class="api-path">/api/negotiations/:id/status</span><span class="api-auth auth-any">auth</span><span class="api-desc">Atualizar status da negociação</span></div>
+      <div class="api-row"><span class="method m-patch">PATCH</span><span class="api-path">/api/negotiations/:id/ship</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Marcar como enviado + código de rastreio</span></div>
+      <div class="api-row"><span class="method m-patch">PATCH</span><span class="api-path">/api/negotiations/:id/received</span><span class="api-auth auth-client">client</span><span class="api-desc">Confirmar recebimento → inicia prazo de avaliação (7 dias)</span></div>
+    </div>
+
+    <div class="api-section">
+      <h3>⭐ Avaliações</h3>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/reviews</span><span class="api-auth auth-any">auth</span><span class="api-desc">Listar avaliações</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/reviews</span><span class="api-auth auth-client">client</span><span class="api-desc">Submeter avaliação (1-5 estrelas + comentário)</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/client/review-block-status</span><span class="api-auth auth-client">client</span><span class="api-desc">Status de bloqueio do cliente por avaliações pendentes</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/desmanche/review-block-status</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Status de bloqueio do desmanche por avaliações atrasadas</span></div>
+    </div>
+
+    <div class="api-section">
+      <h3>💬 Chat</h3>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/chat/rooms</span><span class="api-auth auth-any">auth</span><span class="api-desc">Listar salas de chat do usuário</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/chat/rooms/:roomId/messages</span><span class="api-auth auth-any">auth</span><span class="api-desc">Histórico de mensagens de uma sala</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/chat/rooms/:roomId/messages</span><span class="api-auth auth-any">auth</span><span class="api-desc">Enviar mensagem no chat</span></div>
+    </div>
+
+    <div class="api-section">
+      <h3>📄 Documentos</h3>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/documents</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Todos os documentos pendentes</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/documents/my</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Meus documentos</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/documents</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Enviar novo documento</span></div>
+      <div class="api-row"><span class="method m-patch">PATCH</span><span class="api-path">/api/documents/:id/status</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Aprovar/rejeitar documento</span></div>
+    </div>
+
+    <div class="api-section">
+      <h3>💳 Billing & Assinaturas</h3>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/billing/my</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Status de cobrança e plano ativo do desmanche</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/billing/setup</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Configurar assinatura e gerar fatura via Asaas</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/billing/webhook</span><span class="api-auth auth-public">webhook</span><span class="api-desc">Webhook Asaas: confirma pagamento automaticamente</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/invoices</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Todas as faturas (admin)</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/invoices/my</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Minhas faturas</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/invoices</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Criar fatura manualmente</span></div>
+      <div class="api-row"><span class="method m-patch">PATCH</span><span class="api-path">/api/invoices/:id/status</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Atualizar status de fatura</span></div>
+    </div>
+
+    <div class="api-section">
+      <h3>📋 Planos de Assinatura</h3>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/subscription-plans</span><span class="api-auth auth-public">público</span><span class="api-desc">Listar planos disponíveis</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/subscription-plans</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Criar novo plano</span></div>
+      <div class="api-row"><span class="method m-patch">PATCH</span><span class="api-path">/api/subscription-plans/:id</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Editar plano</span></div>
+      <div class="api-row"><span class="method m-delete">DELETE</span><span class="api-path">/api/subscription-plans/:id</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Remover plano</span></div>
+    </div>
+
+    <div class="api-section">
+      <h3>⚙️ Configurações Admin</h3>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/admin/settings</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Configurações globais do sistema</span></div>
+      <div class="api-row"><span class="method m-patch">PATCH</span><span class="api-path">/api/admin/settings</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Atualizar configurações (maxOverdueBeforeBlock, etc.)</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/admin/billing</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Visão financeira consolidada do admin</span></div>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/dashboard/stats</span><span class="api-auth auth-any">auth</span><span class="api-desc">Estatísticas gerais do dashboard</span></div>
+    </div>
+
+    <div class="api-section">
+      <h3>🔨 Leilões & Upload</h3>
+      <div class="api-row"><span class="method m-get">GET</span><span class="api-path">/api/auctions</span><span class="api-auth auth-public">público</span><span class="api-desc">Listar leilões</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/auctions</span><span class="api-auth auth-admin">admin</span><span class="api-desc">Criar novo leilão</span></div>
+      <div class="api-row"><span class="method m-post">POST</span><span class="api-path">/api/upload</span><span class="api-auth auth-desmanche">desmanche</span><span class="api-desc">Upload de arquivo geral (logo, documentos)</span></div>
+    </div>
+  </section>
+
+  <!-- ======== 10. ASAAS ======== -->
+  <section id="integracao-asaas">
+    <div class="section-header">
+      <div class="section-icon icon-yellow">💳</div>
+      <h2 class="section-title">10. Integração Asaas (Pagamentos)</h2>
+    </div>
+    <p class="text-muted" style="margin-bottom:1.25rem;">O Asaas é o gateway de pagamentos integrado para cobranças de assinatura dos desmanches. Suporte a <strong>Pix</strong> e <strong>Boleto Bancário</strong>.</p>
+
+    <div class="card-grid">
+      <div class="card">
+        <h4>🔧 Configuração</h4>
+        <p>Arquivo: <code>server/asaas.ts</code><br/>
+        Ambiente: <code>ASAAS_ENVIRONMENT</code> (<code>sandbox</code> / <code>production</code>)<br/>
+        API Key: <code>ASAAS_API_KEY</code><br/>
+        URL Sandbox: <code>https://sandbox.asaas.com/api/v3</code><br/>
+        URL Produção: <code>https://api.asaas.com/v3</code></p>
+      </div>
+      <div class="card">
+        <h4>📞 Funções Implementadas</h4>
+        <p><code>isAsaasConfigured()</code> — verifica se API key está configurada<br/>
+        <code>createAsaasCustomer()</code> — cria cliente no Asaas<br/>
+        <code>createAsaasCharge()</code> — gera cobrança (Pix/Boleto)<br/>
+        <code>getAsaasChargeStatus()</code> — consulta status de cobrança<br/>
+        <code>getDueDateString()</code> — gera data de vencimento</p>
+      </div>
+      <div class="card">
+        <h4>🔄 Fluxo de Cobrança</h4>
+        <p>1. Desmanche configura assinatura → <code>POST /api/billing/setup</code><br/>
+        2. Sistema cria cliente no Asaas (se não existir)<br/>
+        3. Gera cobrança com vencimento em 3 dias<br/>
+        4. Retorna link de pagamento (invoice URL)<br/>
+        5. Webhook confirma pagamento → status <code>active</code></p>
+      </div>
+      <div class="card">
+        <h4>🪝 Webhook</h4>
+        <p>Endpoint: <code>POST /api/billing/webhook</code><br/>
+        Evento: <code>PAYMENT_CONFIRMED</code> ou <code>PAYMENT_RECEIVED</code><br/>
+        Ação: marca a transação como <code>paid</code> pelo <code>asaasChargeId</code><br/>
+        Modo offline: funciona sem Asaas (status manual via admin)</p>
+      </div>
+    </div>
+
+    <div style="background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:1rem 1.25rem;margin-top:1rem;">
+      <p style="color:#fbbf24;font-size:.85rem;font-weight:600;margin-bottom:.3rem;">⚠️ Modo Offline</p>
+      <p class="text-sm text-muted">Quando <code>ASAAS_API_KEY</code> não está configurada, o sistema funciona normalmente sem gerar cobranças reais. O admin pode confirmar pagamentos manualmente via painel de Assinaturas & Receitas.</p>
+    </div>
+  </section>
+
+  <!-- ======== 11. APIS EXTERNAS ======== -->
+  <section id="apis-externas">
+    <div class="section-header">
+      <div class="section-icon icon-cyan">🌐</div>
+      <h2 class="section-title">11. APIs Externas Gratuitas</h2>
+    </div>
+    <p class="text-muted" style="margin-bottom:1.5rem;">O sistema utiliza <strong>4 APIs externas gratuitas</strong>, sem necessidade de chaves de API ou autenticação. Todas são chamadas diretamente do frontend (browser).</p>
+
+    <!-- BrasilAPI CNPJ -->
+    <div class="panel" style="margin-bottom:1.5rem;">
+      <div class="panel-header" style="background:rgba(16,185,129,.1);border-bottom:1px solid rgba(16,185,129,.2);">
+        🏛️ BrasilAPI — Consulta CNPJ (Receita Federal)
+      </div>
+      <div class="panel-body">
+        <div class="card-grid">
+          <div class="card">
+            <h4>📌 URL Base</h4>
+            <p><code>https://brasilapi.com.br/api/cnpj/v1/{cnpj}</code></p>
+          </div>
+          <div class="card">
+            <h4>📍 Onde é usado</h4>
+            <p><code>client/src/pages/CadastroDesmanche.tsx</code><br/>Função: <code>fetchCnpj()</code><br/>Trigger: ao digitar o CNPJ no wizard de cadastro do desmanche</p>
+          </div>
+          <div class="card">
+            <h4>⚙️ Comportamento</h4>
+            <p>Ao digitar um CNPJ de 14 dígitos, o sistema consulta a Receita Federal via BrasilAPI e <strong>auto-preenche</strong> todos os campos do formulário automaticamente.</p>
+          </div>
+          <div class="card">
+            <h4>📦 Campos Auto-preenchidos</h4>
+            <p><code>razao_social</code> → Razão Social<br/><code>nome_fantasia</code> → Nome Fantasia<br/><code>ddd_telefone_1</code> → Telefone<br/><code>logradouro</code>, <code>numero</code>, <code>complemento</code> → Endereço<br/><code>bairro</code>, <code>municipio</code>, <code>uf</code> → Cidade/Estado<br/><code>cep</code> → CEP<br/><code>qsa[0].nome_socio</code> → Nome do Responsável<br/><code>natureza_juridica</code>, <code>situacao_cadastral</code></p>
+          </div>
+        </div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-top:.75rem;font-size:.82rem;">
+          <div style="color:#64748b;margin-bottom:.3rem;"># Exemplo de requisição (sem autenticação)</div>
+          <div style="color:#34d399;">GET https://brasilapi.com.br/api/cnpj/v1/98765432000110</div>
+          <div style="color:#64748b;margin-top:.3rem;"># Retorna: razão social, endereço, sócios, situação cadastral, atividades, etc.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ViaCEP -->
+    <div class="panel" style="margin-bottom:1.5rem;">
+      <div class="panel-header" style="background:rgba(59,130,246,.1);border-bottom:1px solid rgba(59,130,246,.2);">
+        📬 ViaCEP — Busca de Endereço por CEP (Correios)
+      </div>
+      <div class="panel-body">
+        <div class="card-grid">
+          <div class="card">
+            <h4>📌 URL Base</h4>
+            <p><code>https://viacep.com.br/ws/{cep}/json/</code></p>
+          </div>
+          <div class="card">
+            <h4>📍 Onde é usado</h4>
+            <p><strong>1.</strong> <code>CadastroDesmanche.tsx</code> — step de endereço no wizard de cadastro<br/><strong>2.</strong> <code>ProfileTab.tsx</code> — aba de perfil do cliente<br/>Função: <code>fetchCep()</code></p>
+          </div>
+          <div class="card">
+            <h4>⚙️ Comportamento</h4>
+            <p>Ao digitar um CEP de 8 dígitos, o sistema consulta o ViaCEP e <strong>auto-preenche</strong> rua, bairro, cidade e estado. O usuário só precisa informar o número e complemento.</p>
+          </div>
+          <div class="card">
+            <h4>📦 Campos Auto-preenchidos</h4>
+            <p><code>logradouro</code> → Rua/Avenida<br/><code>bairro</code> → Bairro<br/><code>localidade</code> → Cidade<br/><code>uf</code> → Estado (sigla)<br/><code>cep</code> → CEP formatado</p>
+          </div>
+        </div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-top:.75rem;font-size:.82rem;">
+          <div style="color:#64748b;margin-bottom:.3rem;"># Exemplo de requisição (sem autenticação)</div>
+          <div style="color:#60a5fa;">GET https://viacep.com.br/ws/01310100/json/</div>
+          <div style="color:#64748b;margin-top:.3rem;"># Retorna: {"cep":"01310-100","logradouro":"Avenida Paulista","bairro":"Bela Vista","localidade":"São Paulo","uf":"SP"}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FIPE API -->
+    <div class="panel" style="margin-bottom:1.5rem;">
+      <div class="panel-header" style="background:rgba(245,158,11,.1);border-bottom:1px solid rgba(245,158,11,.2);">
+        🚗 API FIPE (Parallelum) — Marcas e Modelos de Veículos
+      </div>
+      <div class="panel-body">
+        <div class="card-grid">
+          <div class="card">
+            <h4>📌 URL Base</h4>
+            <p><code>https://parallelum.com.br/fipe/api/v1/</code></p>
+          </div>
+          <div class="card">
+            <h4>📍 Onde é usado</h4>
+            <p><code>client/src/components/client/CreateOrderWizard.tsx</code><br/>Funções: <code>fetchFipeBrands()</code> e <code>fetchFipeModels()</code><br/>Trigger: Passo 2 do wizard de criação de pedido</p>
+          </div>
+          <div class="card">
+            <h4>🔗 Endpoints Consumidos</h4>
+            <p><code>GET /carros/marcas</code> → marcas de carros<br/><code>GET /motos/marcas</code> → marcas de motos<br/><code>GET /caminhoes/marcas</code> → marcas de caminhões<br/><code>GET /{tipo}/marcas/{codigo}/modelos</code> → modelos de uma marca</p>
+          </div>
+          <div class="card">
+            <h4>⚙️ Comportamento</h4>
+            <p>Quando o usuário seleciona carro, moto ou caminhão, o wizard busca automaticamente as marcas disponíveis na tabela FIPE. Ao escolher a marca, busca os modelos. Outros tipos (van, barco, avião etc.) usam lista estática.</p>
+          </div>
+        </div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-top:.75rem;font-size:.82rem;">
+          <div style="color:#64748b;margin-bottom:.3rem;"># Buscar marcas de carros</div>
+          <div style="color:#fbbf24;">GET https://parallelum.com.br/fipe/api/v1/carros/marcas</div>
+          <div style="color:#64748b;margin-top:.4rem;"># Buscar modelos da Volkswagen (código 59)</div>
+          <div style="color:#fbbf24;">GET https://parallelum.com.br/fipe/api/v1/carros/marcas/59/modelos</div>
+          <div style="color:#64748b;margin-top:.3rem;"># Retorna: [{"codigo":"59","nome":"Volkswagen"}, ...] / {"modelos":[{"codigo":829,"nome":"Gol"}...]}</div>
+        </div>
+        <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-top:.5rem;font-size:.82rem;">
+          <div style="color:#94a3b8;font-size:.78rem;font-weight:600;">Tipos com FIPE integrada:</div>
+          <div style="margin-top:.3rem;display:flex;gap:.5rem;flex-wrap:wrap;">
+            <span style="background:rgba(245,158,11,.1);color:#fbbf24;border:1px solid rgba(245,158,11,.3);padding:2px 10px;border-radius:5px;font-size:.75rem;">🚗 carros</span>
+            <span style="background:rgba(245,158,11,.1);color:#fbbf24;border:1px solid rgba(245,158,11,.3);padding:2px 10px;border-radius:5px;font-size:.75rem;">🏍️ motos</span>
+            <span style="background:rgba(245,158,11,.1);color:#fbbf24;border:1px solid rgba(245,158,11,.3);padding:2px 10px;border-radius:5px;font-size:.75rem;">🚛 caminhoes</span>
+          </div>
+          <div style="color:#64748b;font-size:.77rem;margin-top:.4rem;">Outros tipos usam lista estática: ônibus, van, barco, avião, helicóptero, bicicleta, trator, outro</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Correios -->
+    <div class="panel" style="margin-bottom:1.5rem;">
+      <div class="panel-header" style="background:rgba(239,68,68,.1);border-bottom:1px solid rgba(239,68,68,.2);">
+        📦 Correios — Rastreamento de Encomendas
+      </div>
+      <div class="panel-body">
+        <div class="card-grid">
+          <div class="card">
+            <h4>📌 Status Atual</h4>
+            <p><span style="background:rgba(245,158,11,.15);color:#fbbf24;border:1px solid rgba(245,158,11,.3);padding:2px 8px;border-radius:5px;font-size:.78rem;">PARCIALMENTE INTEGRADO</span><br/>O código de rastreio é <strong>armazenado no banco</strong> e exibido para o cliente, mas a consulta de status em tempo real nos Correios ainda não está implementada como chamada de API automática.</p>
+          </div>
+          <div class="card">
+            <h4>📍 Como funciona hoje</h4>
+            <p><strong>1.</strong> Desmanche digita o código de rastreio ao marcar envio (<code>PATCH /api/negotiations/:id/ship</code>)<br/><strong>2.</strong> Código é salvo em <code>negotiations.tracking_code</code><br/><strong>3.</strong> Exibido ao cliente na aba Negociações<br/><strong>4.</strong> Cliente acessa os Correios manualmente para rastrear</p>
+          </div>
+          <div class="card">
+            <h4>🔮 Próximo Passo Sugerido</h4>
+            <p>Integrar a API não-oficial dos Correios ou o serviço <strong>Jadlog</strong> / <strong>Melhor Envio</strong> para rastreamento automático em tempo real diretamente no painel do cliente.</p>
+          </div>
+          <div class="card">
+            <h4>🔗 Opções de API</h4>
+            <p><code>https://trackingmore.com</code> — API paga multi-carrier<br/><code>https://melhorenvio.com.br</code> — BR, com Correios + privadas<br/><code>https://www.correios.com.br/rastreamento</code> — link direto para rastrear</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resumo -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem;">
+      <h3 style="margin:0 0 .75rem;font-size:.9rem;color:var(--text3);text-transform:uppercase;letter-spacing:1px;">Resumo das APIs Externas</h3>
+      <div style="overflow-x:auto;">
+        <table class="schema-table">
+          <thead>
+            <tr>
+              <th>API</th>
+              <th>Provedor</th>
+              <th>URL</th>
+              <th>Auth</th>
+              <th>Onde é chamada</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="col-name">BrasilAPI CNPJ</td>
+              <td class="col-note">Receita Federal (via BrasilAPI)</td>
+              <td class="col-type">brasilapi.com.br/api/cnpj/v1/</td>
+              <td class="col-note">Nenhuma</td>
+              <td class="col-note">CadastroDesmanche.tsx</td>
+              <td><span style="color:#34d399;">✅ Ativo</span></td>
+            </tr>
+            <tr>
+              <td class="col-name">ViaCEP</td>
+              <td class="col-note">Open Source (Correios)</td>
+              <td class="col-type">viacep.com.br/ws/{cep}/json/</td>
+              <td class="col-note">Nenhuma</td>
+              <td class="col-note">CadastroDesmanche, ProfileTab</td>
+              <td><span style="color:#34d399;">✅ Ativo</span></td>
+            </tr>
+            <tr>
+              <td class="col-name">FIPE (Parallelum)</td>
+              <td class="col-note">Tabela FIPE brasileira</td>
+              <td class="col-type">parallelum.com.br/fipe/api/v1/</td>
+              <td class="col-note">Nenhuma</td>
+              <td class="col-note">CreateOrderWizard.tsx</td>
+              <td><span style="color:#34d399;">✅ Ativo</span></td>
+            </tr>
+            <tr>
+              <td class="col-name">Correios Rastreio</td>
+              <td class="col-note">Correios</td>
+              <td class="col-type">—</td>
+              <td class="col-note">—</td>
+              <td class="col-note">Armazenado em negotiations.tracking_code</td>
+              <td><span style="color:#fbbf24;">⚠️ Pendente</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== 12. ENV ======== -->
+  <section id="variaveis">
+    <div class="section-header">
+      <div class="section-icon icon-red">🔑</div>
+      <h2 class="section-title">12. Variáveis de Ambiente (servidor)</h2>
+    </div>
+    <div class="env-row"><span class="env-name">ASAAS_API_KEY</span><span class="env-desc">API Key do Asaas para cobranças reais</span><span class="env-optional">opcional</span></div>
+    <div class="env-row"><span class="env-name">ASAAS_ENVIRONMENT</span><span class="env-desc">sandbox (padrão) ou production</span><span class="env-optional">opcional</span></div>
+    <div class="env-row"><span class="env-name">JWT_SECRET</span><span class="env-desc">Segredo para assinar tokens JWT (padrão: fallback inseguro)</span><span class="env-required">recomendado</span></div>
+    <div class="env-row"><span class="env-name">NODE_ENV</span><span class="env-desc">development | production — controla Vite vs. static build</span><span class="env-optional">auto</span></div>
+    <div class="env-row"><span class="env-name">DATABASE_URL</span><span class="env-desc">Caminho do arquivo SQLite (padrão: ./database.db)</span><span class="env-optional">opcional</span></div>
+
+    <p class="text-sm text-muted" style="margin-top:1rem;">Arquivo da API externa (gratuita, sem key): <strong>FIPE API</strong> (<code>https://parallelum.com.br/fipe/api/v1/</code>) — usada no wizard de criação de pedidos para listar marcas/modelos por tipo de veículo.</p>
+  </section>
+
+  <!-- ======== 12. CREDENCIAIS ======== -->
+  <section id="credenciais">
+    <div class="section-header">
+      <div class="section-icon icon-green">🧪</div>
+      <h2 class="section-title">12. Credenciais de Teste</h2>
+    </div>
+    <p class="text-muted" style="margin-bottom:1.25rem;">Usuários pré-cadastrados no seed do banco de dados para testes:</p>
+
+    <h3>Admin</h3>
+    <div class="cred-box">
+      <div class="cred-row"><span class="cred-key">endpoint</span><span class="cred-val">POST /api/auth/login</span></div>
+      <div class="cred-row"><span class="cred-key">email</span><span class="cred-val">admin@centraldesmanches.com</span></div>
+      <div class="cred-row"><span class="cred-key">senha</span><span class="cred-val">admin123</span></div>
+    </div>
+
+    <h3>Desmanche</h3>
+    <div class="cred-box">
+      <div class="cred-row"><span class="cred-key">endpoint</span><span class="cred-val">POST /api/auth/login-desmanche</span></div>
+      <div class="cred-row"><span class="cred-key">email</span><span class="cred-val">contato@irmaossilva.com</span></div>
+      <div class="cred-row"><span class="cred-key">senha</span><span class="cred-val">desmanche123</span></div>
+      <div class="cred-row"><span class="cred-key">id</span><span class="cred-val">735dc8a2-3ece-47cc-ab43-59ca3c22710c</span></div>
+    </div>
+
+    <h3>Cliente</h3>
+    <div class="cred-box">
+      <div class="cred-row"><span class="cred-key">endpoint</span><span class="cred-val">POST /api/auth/login</span></div>
+      <div class="cred-row"><span class="cred-key">email</span><span class="cred-val">recriarme@gmail.com</span></div>
+      <div class="cred-row"><span class="cred-key">senha</span><span class="cred-val">debora123</span></div>
+    </div>
+
+    <h3>Exemplo de Requisição</h3>
+    <div class="cred-box" style="font-size:.8rem;line-height:1.8;">
+      <div style="color:#64748b;"># Fazer login</div>
+      <div style="color:#e2e8f0;">curl -X POST http://localhost:5000/api/auth/login \</div>
+      <div style="color:#e2e8f0;">&nbsp;&nbsp;-H "Content-Type: application/json" \</div>
+      <div style="color:#e2e8f0;">&nbsp;&nbsp;-d '{"email":"recriarme@gmail.com","password":"debora123"}'</div>
+      <br/>
+      <div style="color:#64748b;"># Usar o token retornado</div>
+      <div style="color:#e2e8f0;">curl http://localhost:5000/api/orders/my \</div>
+      <div style="color:#e2e8f0;">&nbsp;&nbsp;-H "Authorization: Bearer SEU_TOKEN_AQUI"</div>
+    </div>
+  </section>
+
+  <hr class="divider" />
+
+  <div style="text-align:center;color:var(--text3);font-size:.82rem;padding:1rem 0 2rem;">
+    <strong style="color:var(--text2);">Central dos Desmanches</strong> · Guia gerado automaticamente · Sistema em produção
+  </div>
+
+</div>
+
+<footer>
+  <p>Central dos Desmanches © 2026 · Guia de Implementação v1.0 · 63 Rotas API · 3 Painéis · SQLite + Drizzle ORM · Asaas Payments</p>
+</footer>
+
+</body>
+</html>
