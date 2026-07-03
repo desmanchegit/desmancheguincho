@@ -3309,6 +3309,9 @@ export async function registerRoutes(app: Express) {
         city: guincho.city,
         state: guincho.state,
         serviceRadius: guincho.service_radius,
+        photoUrl: guincho.photo_url,
+        latitude: guincho.latitude,
+        longitude: guincho.longitude,
         status: guincho.status,
         rejectionReason: guincho.rejection_reason,
         type: "guincho",
@@ -3323,8 +3326,8 @@ export async function registerRoutes(app: Express) {
   app.patch("/api/guinchos/me", authMiddleware, requireType(["guincho"]), async (req, res) => {
     try {
       const id = (req as any).user.id;
-      const { name, tradingName, phone, whatsapp, description, serviceRadius, zipCode, street, number, neighborhood, city, state } = req.body;
-      const updated = storage.updateGuinchoProfile(id, { name, tradingName, phone, whatsapp, description, serviceRadius, zipCode, street, number, neighborhood, city, state });
+      const { name, tradingName, phone, whatsapp, description, serviceRadius, zipCode, street, number, neighborhood, city, state, photoUrl } = req.body;
+      const updated = await storage.updateGuinchoProfile(id, { name, tradingName, phone, whatsapp, description, serviceRadius, zipCode, street, number, neighborhood, city, state, photoUrl });
       if (!updated) return res.status(404).json({ message: "Não encontrado" });
       res.json({
         id: updated.id,
@@ -3340,6 +3343,9 @@ export async function registerRoutes(app: Express) {
         neighborhood: updated.neighborhood,
         city: updated.city,
         state: updated.state,
+        photoUrl: updated.photo_url,
+        latitude: updated.latitude,
+        longitude: updated.longitude,
         status: updated.status,
         type: "guincho",
       });

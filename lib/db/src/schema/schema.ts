@@ -537,6 +537,9 @@ export const guinchos = sqliteTable("guinchos", {
   city: text("city").notNull(),
   state: text("state").notNull(),
   serviceRadius: integer("service_radius").notNull().default(50),
+  photoUrl: text("photo_url"),
+  latitude: real("latitude"),
+  longitude: real("longitude"),
   status: text("status", { enum: ["pending", "active", "rejected", "inactive"] }).notNull().default("pending"),
   rejectionReason: text("rejection_reason"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
@@ -559,7 +562,7 @@ export const insertGuinchoSchema = createInsertSchema(guinchos, {
   state: z.string().length(2, "Estado deve ter 2 letras"),
   serviceRadius: z.number().int().min(5).max(500).optional(),
 })
-  .omit({ id: true, status: true, rejectionReason: true, createdAt: true })
+  .omit({ id: true, status: true, rejectionReason: true, createdAt: true, photoUrl: true, latitude: true, longitude: true })
   .refine((d) => (d.documentType === "cnpj" ? !!d.cnpj : !!d.cpf), {
     message: "Informe um CNPJ válido ou um CPF válido de acordo com o tipo selecionado",
     path: ["cnpj"],

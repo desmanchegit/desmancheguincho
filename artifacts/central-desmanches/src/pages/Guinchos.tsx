@@ -8,8 +8,10 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { LoginModal } from "@/components/auth/LoginModal";
 import { RegisterModal } from "@/components/auth/RegisterModal";
 import { useAuth } from "@/hooks/use-auth";
+import { GuinchoMiniMap } from "@/components/guincho/GuinchoMiniMap";
+import { GuinchosMapView } from "@/components/guincho/GuinchosMapView";
 import {
-  Truck, MapPin, Phone, Search, TrendingUp, Menu, CheckCircle, Star,
+  Truck, MapPin, Phone, Search, TrendingUp, Menu, CheckCircle, Star, List, Map as MapIcon,
 } from "lucide-react";
 import logoImg from "@assets/Design_sem_nome_(23)_1772229532951.png";
 
@@ -25,11 +27,27 @@ type Guincho = {
   phone: string;
   whatsapp: string;
   description: string | null;
+  zip_code: string;
+  street: string;
+  number: string | null;
   city: string;
   state: string;
   service_radius: number;
   neighborhood: string | null;
+  photo_url: string | null;
+  latitude: number | null;
+  longitude: number | null;
 };
+
+function fullAddress(g: Guincho) {
+  const parts = [
+    g.street ? `${g.street}${g.number ? `, ${g.number}` : ""}` : null,
+    g.neighborhood,
+    `${g.city} – ${g.state}`,
+    g.zip_code ? `CEP ${g.zip_code}` : null,
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
 
 export default function Guinchos() {
   const { user } = useAuth();
@@ -37,6 +55,7 @@ export default function Guinchos() {
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [search, setSearch] = useState({ city: "", state: "" });
+  const [view, setView] = useState<"list" | "map">("list");
 
   const panelPath = user?.type === "client" ? "/cliente"
     : user?.type === "desmanche" ? "/desmanche"
@@ -286,7 +305,7 @@ export default function Guinchos() {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-3">
               <p className="text-sm text-muted-foreground">
                 <span className="font-semibold text-foreground">{data?.total}</span> guincho(s) encontrado(s)
                 {(search.city || search.state) && (
@@ -295,14 +314,62 @@ export default function Guinchos() {
                   </Button>
                 )}
               </p>
+              <div className="flex gap-1 bg-muted p-1 rounded-lg">
+                <button
+                  onClick={() => setView("list")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    view === "list" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <List className="h-3.5 w-3.5" />
+                  Lista
+                </button>
+                <button
+                  onClick={() => setView("map")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    view === "map" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <MapIcon className="h-3.5 w-3.5" />
+                  Mapa
+                </button>
+              </div>
             </div>
+
+            {view === "map" ? (
+              guinchos.some((g) => g.latitude && g.longitude) ? (
+                <GuinchosMapView
+                  guinchos={guinchos
+                    .filter((g): g is Guincho & { latitude: number; longitude: number } => !!g.latitude && !!g.longitude)
+                    .map((g) => ({
+                      id: g.id,
+                      tradingName: g.trading_name,
+                      neighborhood: g.neighborhood,
+                      city: g.city,
+                      state: g.state,
+                      whatsapp: g.whatsapp,
+                      latitude: g.latitude,
+                      longitude: g.longitude,
+                    }))}
+                  onWhatsapp={openWhatsapp}
+                />
+              ) : (
+                <div className="text-center py-16 text-sm text-muted-foreground bg-muted/30 rounded-xl border">
+                  Nenhum guincho com localização no mapa ainda.
+                </div>
+              )
+            ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {guinchos.map((g) => (
                 <div key={g.id} className="group bg-card border rounded-2xl p-5 space-y-4 hover:shadow-lg hover:border-green-500/40 transition-all duration-200">
                   {/* Header */}
                   <div className="flex items-start gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-green-500/10 border border-green-500/20 flex items-center justify-center shrink-0 group-hover:bg-green-500/20 transition-colors">
-                      <Truck className="h-6 w-6 text-green-500" />
+                    <div className="w-12 h-12 rounded-xl bg-green-500/10 border border-green-500/20 flex items-center justify-center shrink-0 group-hover:bg-green-500/20 transition-colors overflow-hidden">
+                      {g.photo_url ? (
+                        <img src={g.photo_url} alt={g.trading_name} className="w-full h-full object-cover" />
+                      ) : (
+                        <Truck className="h-6 w-6 text-green-500" />
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <h3 className="font-bold leading-tight truncate">{g.trading_name}</h3>
@@ -318,14 +385,17 @@ export default function Guinchos() {
                     <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">{g.description}</p>
                   )}
 
+                  {/* Mini map */}
+                  {g.latitude && g.longitude && (
+                    <GuinchoMiniMap latitude={g.latitude} longitude={g.longitude} label={g.trading_name} />
+                  )}
+
                   {/* Location */}
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
-                    <MapPin className="h-3.5 w-3.5 shrink-0 text-green-500" />
-                    <span className="truncate">
-                      {g.neighborhood ? `${g.neighborhood}, ` : ""}{g.city} – {g.state}
-                    </span>
-                    <span className="ml-auto shrink-0 font-medium text-foreground">até {g.service_radius} km</span>
+                  <div className="flex items-start gap-1.5 text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-green-500 mt-0.5" />
+                    <span className="leading-snug">{fullAddress(g)}</span>
                   </div>
+                  <div className="text-xs font-medium text-foreground -mt-2">até {g.service_radius} km de raio</div>
 
                   {/* Actions */}
                   <div className="flex gap-2 pt-1">
@@ -349,6 +419,7 @@ export default function Guinchos() {
                 </div>
               ))}
             </div>
+            )}
           </div>
         )}
 

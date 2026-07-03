@@ -2400,6 +2400,9 @@ sqlite.exec(`
     city TEXT NOT NULL,
     state TEXT NOT NULL,
     service_radius INTEGER NOT NULL DEFAULT 50,
+    photo_url TEXT,
+    latitude REAL,
+    longitude REAL,
     status TEXT NOT NULL DEFAULT 'pending',
     rejection_reason TEXT,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
@@ -2411,6 +2414,9 @@ for (const stmt of [
   "ALTER TABLE guinchos ADD COLUMN document_type TEXT NOT NULL DEFAULT 'cnpj'",
   "ALTER TABLE guinchos ADD COLUMN cpf TEXT",
   "ALTER TABLE guinchos ADD COLUMN antt TEXT",
+  "ALTER TABLE guinchos ADD COLUMN photo_url TEXT",
+  "ALTER TABLE guinchos ADD COLUMN latitude REAL",
+  "ALTER TABLE guinchos ADD COLUMN longitude REAL",
 ]) {
   try { sqlite.exec(stmt); } catch { /* column already exists */ }
 }
@@ -2441,6 +2447,9 @@ for (const stmt of [
         city TEXT NOT NULL,
         state TEXT NOT NULL,
         service_radius INTEGER NOT NULL DEFAULT 50,
+        photo_url TEXT,
+        latitude REAL,
+        longitude REAL,
         status TEXT NOT NULL DEFAULT 'pending',
         rejection_reason TEXT,
         created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
@@ -2458,16 +2467,53 @@ export async function createGuincho(data: any): Promise<any> {
   const { password, ...rest } = data;
   const hashed = await bcrypt.hash(password, 10);
   const id = randomUUID();
+  const coords = await geocodeAddress({
+    street: rest.street, number: rest.number, neighborhood: rest.neighborhood,
+    city: rest.city, state: rest.state, zipCode: rest.zipCode,
+  });
   sqlite.prepare(`
-    INSERT INTO guinchos (id, name, trading_name, document_type, cnpj, cpf, antt, email, phone, whatsapp, password, description, zip_code, street, number, neighborhood, city, state, service_radius)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO guinchos (id, name, trading_name, document_type, cnpj, cpf, antt, email, phone, whatsapp, password, description, zip_code, street, number, neighborhood, city, state, service_radius, photo_url, latitude, longitude)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, rest.name, rest.tradingName, rest.documentType ?? "cnpj", rest.cnpj ?? null, rest.cpf ?? null, rest.antt ?? null,
     rest.email, rest.phone, rest.whatsapp,
     hashed, rest.description ?? null, rest.zipCode, rest.street, rest.number ?? null,
-    rest.neighborhood ?? null, rest.city, rest.state, rest.serviceRadius ?? 50
+    rest.neighborhood ?? null, rest.city, rest.state, rest.serviceRadius ?? 50,
+    rest.photoUrl ?? null, coords?.latitude ?? null, coords?.longitude ?? null
   );
   return getGuinchoById(id);
+}
+
+/**
+ * Geocode a Brazilian address into lat/lng using the free Nominatim (OpenStreetMap) API.
+ * Nominatim requires a descriptive User-Agent and has a strict rate limit — this is
+ * only called on register/address-update, never on list/read paths.
+ */
+export async function geocodeAddress(addr: {
+  street?: string | null; number?: string | null; neighborhood?: string | null;
+  city: string; state: string; zipCode?: string | null;
+}): Promise<{ latitude: number; longitude: number } | null> {
+  try {
+    const parts = [
+      [addr.street, addr.number].filter(Boolean).join(", "),
+      addr.neighborhood,
+      addr.city,
+      addr.state,
+      "Brasil",
+    ].filter(Boolean);
+    const query = parts.join(", ");
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(query)}`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "CentralDosDesmanches/1.0 (contato@centraldosdesmanches.com.br)" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const results = (await res.json()) as Array<{ lat: string; lon: string }>;
+    if (!results.length) return null;
+    return { latitude: parseFloat(results[0].lat), longitude: parseFloat(results[0].lon) };
+  } catch {
+    return null;
+  }
 }
 
 export function getGuinchoById(id: string): any | undefined {
@@ -2513,16 +2559,39 @@ export function updateGuinchoStatus(id: string, status: string, rejectionReason?
   sqlite.prepare("UPDATE guinchos SET status = ?, rejection_reason = ? WHERE id = ?").run(status, rejectionReason ?? null, id);
 }
 
-export function updateGuinchoProfile(id: string, data: {
+export async function updateGuinchoProfile(id: string, data: {
   name?: string; tradingName?: string; phone?: string; whatsapp?: string; description?: string;
   serviceRadius?: number; zipCode?: string; street?: string; number?: string; neighborhood?: string; city?: string; state?: string;
-}): any {
+  photoUrl?: string;
+}): Promise<any> {
   const g = getGuinchoById(id);
   if (!g) return null;
+
+  const addressChanged = ["zipCode", "street", "number", "neighborhood", "city", "state"].some(
+    (k) => (data as any)[k] !== undefined
+  );
+  let latitude = g.latitude;
+  let longitude = g.longitude;
+  if (addressChanged) {
+    const coords = await geocodeAddress({
+      street: data.street ?? g.street,
+      number: data.number !== undefined ? data.number : g.number,
+      neighborhood: data.neighborhood !== undefined ? data.neighborhood : g.neighborhood,
+      city: data.city ?? g.city,
+      state: data.state ?? g.state,
+      zipCode: data.zipCode ?? g.zip_code,
+    });
+    if (coords) {
+      latitude = coords.latitude;
+      longitude = coords.longitude;
+    }
+  }
+
   sqlite.prepare(`
     UPDATE guinchos SET
       name = ?, trading_name = ?, phone = ?, whatsapp = ?, description = ?, service_radius = ?,
-      zip_code = ?, street = ?, number = ?, neighborhood = ?, city = ?, state = ?
+      zip_code = ?, street = ?, number = ?, neighborhood = ?, city = ?, state = ?, photo_url = ?,
+      latitude = ?, longitude = ?
     WHERE id = ?
   `).run(
     data.name ?? g.name,
@@ -2537,6 +2606,9 @@ export function updateGuinchoProfile(id: string, data: {
     data.neighborhood !== undefined ? data.neighborhood : g.neighborhood,
     data.city ?? g.city,
     data.state ?? g.state,
+    data.photoUrl !== undefined ? data.photoUrl : g.photo_url,
+    latitude,
+    longitude,
     id
   );
   return getGuinchoById(id);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Truck, LogOut, User, Clock, CheckCircle2, XCircle, Loader2, Save, Phone, MapPin, AlertCircle } from "lucide-react";
+import { useUpload } from "@workspace/object-storage-web";
+import { Truck, LogOut, User, Clock, CheckCircle2, XCircle, Loader2, Save, Phone, MapPin, AlertCircle, Camera } from "lucide-react";
 import logoImg from "@assets/Design_sem_nome_(23)_1772229532951.png";
 
 const GUINCHO_TOKEN_KEY = "guincho_token";
@@ -48,6 +49,9 @@ type GuinchoUser = {
   city: string;
   state: string;
   serviceRadius: number;
+  photoUrl: string | null;
+  latitude: number | null;
+  longitude: number | null;
   status: string;
   rejectionReason: string | null;
   type: "guincho";
@@ -173,6 +177,10 @@ function ProfileTab({ user, onUpdate }: { user: GuinchoUser; onUpdate: (u: Guinc
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { uploadFile, isUploading } = useUpload({
+    onError: (err) => toast({ title: err.message || "Erro ao enviar foto", variant: "destructive" }),
+  });
   const [form, setForm] = useState({
     tradingName: user.tradingName,
     phone: user.phone,
@@ -188,6 +196,25 @@ function ProfileTab({ user, onUpdate }: { user: GuinchoUser; onUpdate: (u: Guinc
   });
 
   const set = (f: string, v: string) => setForm((prev) => ({ ...prev, [f]: v }));
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const result = await uploadFile(file);
+    if (!result) return;
+    const photoUrl = `/api/storage${result.objectPath}`;
+    try {
+      const res = await guinchoRequest("PATCH", "/api/guinchos/me", { photoUrl });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      onUpdate({ ...user, ...data });
+      toast({ title: "Foto atualizada!" });
+    } catch (err: any) {
+      toast({ title: err.message || "Erro ao salvar foto", variant: "destructive" });
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   async function lookupCep(cep: string) {
     const digits = cep.replace(/\D/g, "");
@@ -237,6 +264,38 @@ function ProfileTab({ user, onUpdate }: { user: GuinchoUser; onUpdate: (u: Guinc
 
   return (
     <div className="space-y-5">
+      <div className="space-y-2">
+        <Label>Foto do Guincho</Label>
+        <div className="flex items-center gap-4">
+          <div className="w-20 h-20 rounded-xl bg-muted border overflow-hidden flex items-center justify-center shrink-0">
+            {user.photoUrl ? (
+              <img src={user.photoUrl} alt={user.tradingName} className="w-full h-full object-cover" />
+            ) : (
+              <Truck className="h-8 w-8 text-muted-foreground/40" />
+            )}
+          </div>
+          <div className="space-y-1">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoChange}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isUploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {isUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enviando...</> : <><Camera className="mr-2 h-4 w-4" />Enviar Foto</>}
+            </Button>
+            <p className="text-xs text-muted-foreground">Aparece no catálogo público. JPG ou PNG.</p>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>Nome Fantasia</Label>
