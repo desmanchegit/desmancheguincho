@@ -21,6 +21,136 @@ export default function PrivacyPolicyModal({ open, onClose }: PrivacyPolicyModal
         </DialogHeader>
 
         <div className="overflow-y-auto px-6 py-5 space-y-5 text-sm text-slate-600 leading-relaxed">
+
+          {/* ── Termo de Uso da Plataforma ── */}
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-4">
+            <h2 className="font-bold text-slate-900 text-base">TERMO DE USO DA PLATAFORMA CENTRAL DOS DESMANCHES</h2>
+            <p>
+              Pelo presente Termo de Uso, o usuário declara que leu, compreendeu e concorda com as condições
+              abaixo para utilização da plataforma Central dos Desmanches.
+            </p>
+
+            <Section title="1. Objeto">
+              A Central dos Desmanches é uma plataforma de divulgação e intermediação de contatos entre
+              pessoas que procuram peças automotivas e desmanches legalizados cadastrados na plataforma.
+              <br /><br />
+              O serviço de envio de solicitações de peças é gratuito para o usuário.
+            </Section>
+
+            <Section title="2. Funcionamento da plataforma">
+              Ao cadastrar um pedido, a solicitação é encaminhada aos desmanches parceiros que poderão
+              responder caso possuam a peça solicitada.
+              <br /><br />
+              A negociação ocorre exclusivamente entre o usuário e o desmanche escolhido, sem qualquer
+              participação da Central dos Desmanches.
+            </Section>
+
+            <Section title="3. Ausência de participação na negociação">
+              <p className="mb-2">A Central dos Desmanches:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>não vende peças automotivas;</li>
+                <li>não compra peças automotivas;</li>
+                <li>não recebe pagamentos dos usuários;</li>
+                <li>não recebe valores em nome dos desmanches;</li>
+                <li>não participa das negociações comerciais;</li>
+                <li>não define preços, condições de venda, fretes ou formas de pagamento.</li>
+              </ul>
+              <p className="mt-2">Toda negociação é realizada diretamente entre o usuário e o desmanche.</p>
+            </Section>
+
+            <Section title="4. Desmanches cadastrados">
+              A Central dos Desmanches busca cadastrar exclusivamente desmanches legalizados, regularmente
+              autorizados e fiscalizados pelos órgãos competentes, incluindo o DETRAN, conforme a legislação
+              aplicável.
+              <br /><br />
+              Entretanto, a responsabilidade pelas informações prestadas, pela disponibilidade das peças e
+              pelo cumprimento das obrigações legais é exclusiva de cada desmanche.
+            </Section>
+
+            <Section title="5. Isenção de responsabilidade">
+              <p className="mb-2">A Central dos Desmanches não se responsabiliza por:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>qualidade das peças;</li>
+                <li>funcionamento ou compatibilidade das peças;</li>
+                <li>peças novas ou usadas;</li>
+                <li>garantia oferecida pelo desmanche;</li>
+                <li>entrega ou atraso na entrega;</li>
+                <li>transporte ou frete;</li>
+                <li>danos durante o transporte;</li>
+                <li>devoluções;</li>
+                <li>trocas;</li>
+                <li>reembolsos;</li>
+                <li>defeitos ocultos;</li>
+                <li>instalação das peças;</li>
+                <li>prejuízos decorrentes da negociação entre as partes;</li>
+                <li>emissão de nota fiscal;</li>
+                <li>cumprimento de garantias legais ou contratuais.</li>
+              </ul>
+              <p className="mt-2">
+                Qualquer reclamação deverá ser tratada diretamente com o desmanche responsável pela venda.
+              </p>
+            </Section>
+
+            <Section title="6. Responsabilidade do usuário">
+              O usuário declara estar ciente de que deve verificar as condições da negociação antes da
+              compra, incluindo preço, estado da peça, garantia, frete, prazo de entrega e demais condições
+              comerciais.
+            </Section>
+
+            <Section title="7. Aceitação">
+              Ao utilizar a plataforma, o usuário declara que leu, compreendeu e aceita integralmente este
+              Termo de Uso.
+              <br /><br />
+              Este termo passa a produzir efeitos a partir da utilização da plataforma e permanecerá válido
+              enquanto o usuário utilizar os serviços da Central dos Desmanches.
+            </Section>
+
+            <Section title="8. Importância do Registro da Negociação na Plataforma">
+              A Central dos Desmanches recomenda fortemente que toda negociação iniciada por meio da
+              plataforma permaneça registrada até sua conclusão.
+              <br /><br />
+              <p className="mb-2">Para maior segurança, o usuário deve:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>manter todas as conversas registradas na plataforma sempre que possível;</li>
+                <li>solicitar ao desmanche fotos e vídeos atuais da peça antes da compra;</li>
+                <li>confirmar a compatibilidade da peça com seu veículo;</li>
+                <li>exigir a emissão da Nota Fiscal quando aplicável;</li>
+                <li>solicitar o código de rastreamento ou comprovante de envio da mercadoria;</li>
+                <li>guardar todos os comprovantes de pagamento e demais documentos relacionados à negociação;</li>
+                <li>comunicar imediatamente à Central dos Desmanches qualquer irregularidade ou dificuldade encontrada durante a negociação.</li>
+              </ul>
+              <p className="mt-2">
+                A comunicação rápida com a Central dos Desmanches aumenta significativamente a possibilidade
+                de auxílio na solução de eventuais problemas junto ao desmanche parceiro.
+              </p>
+              <p className="mt-2">
+                Embora a Central dos Desmanches não participe da compra e venda, nem seja responsável pela
+                entrega, qualidade, garantia, devolução, troca, reembolso ou funcionamento das peças, poderá,
+                sempre que possível, atuar como facilitadora na comunicação entre as partes, buscando uma
+                solução amigável para o caso.
+              </p>
+              <p className="mt-2">
+                O usuário reconhece que deixar de comunicar a Central dos Desmanches sobre problemas, ou
+                realizar negociações totalmente fora da plataforma, poderá limitar ou impossibilitar esse
+                suporte, uma vez que não haverá registros suficientes para auxiliar na mediação do ocorrido.
+              </p>
+              <p className="mt-2">
+                A atuação da Central dos Desmanches como intermediadora de comunicação é voluntária, não
+                constitui obrigação legal ou contratual de solucionar conflitos e não implica
+                responsabilidade pelos resultados da negociação realizada entre usuário e desmanche.
+              </p>
+            </Section>
+
+            <Section title="9. Foro">
+              Fica eleito o foro da Comarca de São Luís, Estado do Maranhão, para dirimir quaisquer dúvidas,
+              controvérsias ou litígios oriundos deste Termo de Uso, com renúncia expressa a qualquer outro
+              foro, por mais privilegiado que seja ou venha a ser.
+            </Section>
+          </div>
+
+          <div className="border-t pt-4" />
+
+          <p className="font-semibold text-slate-800">Política de Privacidade</p>
           <p>
             Olá, seja bem-vindo ao portal da Central dos Desmanches! A seguir apresentaremos a você a nossa
             POLÍTICA DE PRIVACIDADE E TERMOS DE USO. Para todos os usuários que utilizam os serviços da
