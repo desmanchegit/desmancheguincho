@@ -515,7 +515,7 @@ const defaultSettings = [
   { key: 'reviewDeadlineDays', value: '10' },
   { key: 'maxOverdueBeforeBlock', value: '1' },
   { key: 'perTransactionAmount', value: '25' },
-  { key: 'monthlyCapAmount', value: '200' },
+  { key: 'monthlyCapAmount', value: '350' },
   { key: 'licenseAlertDays', value: '30' },
   { key: 'staleNegotiationDays', value: '30' },
 ];

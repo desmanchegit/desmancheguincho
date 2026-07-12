@@ -22,7 +22,7 @@ const BENEFITS = [
   { icon: Users, title: "Rede nacional de compradores", desc: "Conecte-se com oficinas mecânicas, funileiros e clientes de todo o Brasil em um só lugar." },
   { icon: Star, title: "Avaliações e reputação", desc: "Construa sua reputação com avaliações reais de clientes. Quanto melhor sua nota, mais visibilidade." },
   { icon: Package, title: "Gestão de pedidos", desc: "Painel completo para gerenciar propostas, negociações e histórico de vendas com clareza." },
-  { icon: Lock, title: "Pague só por negociação fechada", desc: "R$ 25 por negociação concluída, com teto de R$ 200/mês. Sem mensalidade, sem surpresa." },
+  { icon: Lock, title: "Pague só por negociação fechada", desc: "R$ 25 por negociação concluída, com teto de R$ 350/mês. Sem mensalidade, sem surpresa." },
 ];
 
 const STEPS = [
@@ -335,7 +335,7 @@ export default function CadastroDesmanche() {
             <span className="text-primary">aumente suas vendas</span>
           </h1>
           <p className="text-lg text-background/70 mb-8">
-            Junte-se à maior rede de desmanches do Brasil. Pague R$ 25 por negociação concluída, com teto de R$ 200/mês.
+            Junte-se à maior rede de desmanches do Brasil. Pague R$ 25 por negociação concluída, com teto de R$ 350/mês.
           </p>
         </div>
       </div>
@@ -637,7 +637,7 @@ export default function CadastroDesmanche() {
                       <span className="font-semibold text-base">Por Operação</span>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      R$ 25,00 por negociação concluída. Ao atingir R$ 200,00 no mês, as demais operações são isentas de cobrança.
+                      R$ 25,00 por negociação concluída. Ao atingir R$ 350,00 no mês, as demais operações são isentas de cobrança.
                     </p>
                   </div>
                 </>

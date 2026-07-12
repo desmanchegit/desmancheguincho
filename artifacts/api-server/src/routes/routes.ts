@@ -2538,7 +2538,7 @@ export async function registerRoutes(app: Express) {
         billing = await storage.createOrUpdateDesmancheBilling(desmancheId, { billingModel: "monthly_cycle" });
       }
       const transactions = await storage.getBillingTransactionsByDesmanche(desmancheId);
-      const capAmount = await storage.getSystemSettingNumber("monthlyCapAmount", 200);
+      const capAmount = await storage.getSystemSettingNumber("monthlyCapAmount", 350);
       const perTxAmount = await storage.getSystemSettingNumber("perTransactionAmount", 25);
       const monthlyProposalCount = await storage.getMonthlyProposalCountForDesmanche(desmancheId);
 
@@ -2979,7 +2979,7 @@ export async function registerRoutes(app: Express) {
     // ── Modelo: por transação (legado) ───────────────────────────────────────
     if (billing.billingModel !== "per_transaction") return;
 
-    const capAmount = await storage.getSystemSettingNumber("monthlyCapAmount", 200);
+    const capAmount = await storage.getSystemSettingNumber("monthlyCapAmount", 350);
 
     if (billing.monthlyAmountPaid >= capAmount) {
       await storage.createBillingTransaction({
