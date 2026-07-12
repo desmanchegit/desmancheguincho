@@ -3134,11 +3134,12 @@ export async function registerRoutes(app: Express) {
       const state = req.query.state as string | undefined;
       const limit = Math.min(parseInt(req.query.limit as string || "50"), 100);
       const offset = parseInt(req.query.offset as string || "0");
-      const guinchos = storage.listGuinchos({ status: "active", city, state, limit, offset });
+      const raw = storage.listGuinchos({ status: "active", city, state, limit, offset });
       const total = storage.countGuinchos({ status: "active", city, state });
+      const guinchos = raw.map(({ password: _pw, cnpj: _cnpj, cpf: _cpf, asaas_customer_id: _ac, asaas_payment_id: _ap, ...pub }: any) => pub);
       res.json({ guinchos, total });
     } catch (error) {
-      console.error("List guinchos error:", error);
+      req.log.error({ error }, "List guinchos error");
       res.status(500).json({ message: "Erro ao buscar guinchos" });
     }
   });

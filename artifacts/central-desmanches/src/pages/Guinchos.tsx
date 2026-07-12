@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,7 @@ export default function Guinchos() {
   const [state, setState] = useState("");
   const [search, setSearch] = useState({ city: "", state: "" });
   const [view, setView] = useState<"list" | "map">("list");
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   const panelPath = user?.type === "client" ? "/cliente"
     : user?.type === "desmanche" ? "/desmanche"
@@ -79,6 +80,9 @@ export default function Guinchos() {
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     setSearch({ city, state });
+    setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
   }
 
   function openWhatsapp(whatsapp: string) {
@@ -271,7 +275,7 @@ export default function Guinchos() {
       </section>
 
       {/* Results */}
-      <main className="flex-1 container mx-auto px-4 py-12 max-w-5xl">
+      <main ref={resultsRef} className="flex-1 container mx-auto px-4 py-12 max-w-5xl">
         {isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {[...Array(6)].map((_, i) => (
