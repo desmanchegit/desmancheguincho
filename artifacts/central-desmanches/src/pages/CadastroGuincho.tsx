@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, CheckCircle2, Truck, AlertCircle, ArrowLeft, CreditCard, ExternalLink, Clock } from "lucide-react";
 import logoImg from "@assets/Design_sem_nome_(23)_1772229532951.png";
+import GuinchoContractModal from "@/components/guincho/GuinchoContractModal";
 
 const GUINCHO_TOKEN_KEY = "guincho_token";
 
@@ -47,6 +48,8 @@ export default function CadastroGuincho() {
   const [cnpjMsg, setCnpjMsg] = useState("");
   const [cepLoading, setCepLoading] = useState(false);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
+  const [acceptedContract, setAcceptedContract] = useState(false);
+  const [showContract, setShowContract] = useState(false);
 
   const [documentType, setDocumentType] = useState<"cnpj" | "cpf">("cnpj");
   const [form, setForm] = useState({
@@ -493,7 +496,28 @@ export default function CadastroGuincho() {
               </div>
             </div>
 
-            <Button type="submit" className="w-full" size="lg" disabled={isLoading || cnpjStatus === "error"}>
+            <div className="flex items-start gap-3 rounded-lg border bg-slate-50 p-3">
+              <input
+                id="accept-contract"
+                type="checkbox"
+                checked={acceptedContract}
+                onChange={(e) => setAcceptedContract(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-primary cursor-pointer shrink-0"
+              />
+              <label htmlFor="accept-contract" className="text-sm text-slate-600 cursor-pointer leading-snug">
+                Li e aceito o{" "}
+                <button
+                  type="button"
+                  className="text-primary font-medium hover:underline"
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); setShowContract(true); }}
+                >
+                  Contrato de Prestação de Serviços de Divulgação
+                </button>{" "}
+                da Central dos Desmanches.
+              </label>
+            </div>
+
+            <Button type="submit" className="w-full" size="lg" disabled={isLoading || cnpjStatus === "error" || !acceptedContract}>
               {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enviando cadastro...</> : "Continuar para Pagamento"}
             </Button>
 
@@ -506,6 +530,7 @@ export default function CadastroGuincho() {
           </form>
         </div>
       </div>
+      <GuinchoContractModal open={showContract} onClose={() => setShowContract(false)} />
     </div>
   );
 }
