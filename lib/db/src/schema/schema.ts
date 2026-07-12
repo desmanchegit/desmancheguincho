@@ -542,6 +542,8 @@ export const guinchos = sqliteTable("guinchos", {
   longitude: real("longitude"),
   status: text("status", { enum: ["pending", "active", "rejected", "inactive"] }).notNull().default("pending"),
   rejectionReason: text("rejection_reason"),
+  asaasCustomerId: text("asaas_customer_id"),
+  asaasPaymentId: text("asaas_payment_id"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 });
 

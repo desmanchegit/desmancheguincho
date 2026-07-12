@@ -2559,6 +2559,14 @@ export function updateGuinchoStatus(id: string, status: string, rejectionReason?
   sqlite.prepare("UPDATE guinchos SET status = ?, rejection_reason = ? WHERE id = ?").run(status, rejectionReason ?? null, id);
 }
 
+export function updateGuinchoAsaas(id: string, asaasCustomerId: string, asaasPaymentId: string): void {
+  sqlite.prepare("UPDATE guinchos SET asaas_customer_id = ?, asaas_payment_id = ? WHERE id = ?").run(asaasCustomerId, asaasPaymentId, id);
+}
+
+export function getGuinchoByAsaasPaymentId(paymentId: string): any | undefined {
+  return sqlite.prepare("SELECT * FROM guinchos WHERE asaas_payment_id = ?").get(paymentId) as any;
+}
+
 export async function updateGuinchoProfile(id: string, data: {
   name?: string; tradingName?: string; phone?: string; whatsapp?: string; description?: string;
   serviceRadius?: number; zipCode?: string; street?: string; number?: string; neighborhood?: string; city?: string; state?: string;

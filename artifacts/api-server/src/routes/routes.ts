@@ -2623,7 +2623,14 @@ export async function registerRoutes(app: Express) {
             await storage.updateBillingTransactionStatus(tx.id, "paid");
           }
           if (matching.length > 0) {
-            console.log(`[webhook] Marked ${matching.length} transaction(s) as paid for charge ${payment.id}`);
+            req.log.info(`[webhook] Marked ${matching.length} transaction(s) as paid for charge ${payment.id}`);
+          }
+
+          // Activate guincho if this charge matches a pending guincho registration fee
+          const guincho = storage.getGuinchoByAsaasPaymentId(payment.id);
+          if (guincho && guincho.status === "pending") {
+            storage.updateGuinchoStatus(guincho.id, "active");
+            req.log.info({ guinchoId: guincho.id }, "[webhook] Guincho activated after payment confirmed");
           }
         }
       }
@@ -3226,6 +3233,36 @@ export async function registerRoutes(app: Express) {
         actorName: guincho.trading_name,
         description: `Novo guincho cadastrado: ${guincho.trading_name} (${data.documentType === "cpf" ? "CPF" : "CNPJ"}: ${data.documentType === "cpf" ? guincho.cpf : guincho.cnpj})`,
       });
+
+      // Create Asaas customer + annual charge of R$80
+      let paymentUrl: string | null = null;
+      if (asaas.isAsaasConfigured()) {
+        try {
+          const cpfCnpj = data.documentType === "cpf" ? (data.cpf ?? "") : (data.cnpj ?? "");
+          const customer = await asaas.createAsaasCustomer({
+            name: guincho.name,
+            email: guincho.email,
+            phone: guincho.phone,
+            cpfCnpj,
+          });
+          if (customer && !("error" in customer)) {
+            const charge = await asaas.createAsaasCharge({
+              customerId: customer.id,
+              value: 80,
+              dueDate: asaas.getDueDateString(3),
+              description: "Anuidade Central dos Desmanches — Guincho",
+              billingType: "UNDEFINED",
+            });
+            if (charge) {
+              storage.updateGuinchoAsaas(guincho.id, customer.id, charge.id);
+              paymentUrl = charge.invoiceUrl ?? null;
+            }
+          }
+        } catch (err) {
+          req.log.error({ err }, "Failed to create Asaas charge for guincho");
+        }
+      }
+
       const token = jwt.sign(
         { id: guincho.id, email: guincho.email, type: "guincho" },
         JWT_SECRET,
@@ -3233,6 +3270,7 @@ export async function registerRoutes(app: Express) {
       );
       res.status(201).json({
         token,
+        paymentUrl,
         user: {
           id: guincho.id,
           name: guincho.trading_name,

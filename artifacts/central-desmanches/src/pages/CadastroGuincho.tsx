@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2, Truck, AlertCircle, ArrowLeft } from "lucide-react";
+import { Loader2, CheckCircle2, Truck, AlertCircle, ArrowLeft, CreditCard, ExternalLink, Clock } from "lucide-react";
 import logoImg from "@assets/Design_sem_nome_(23)_1772229532951.png";
 
 const GUINCHO_TOKEN_KEY = "guincho_token";
@@ -35,7 +35,7 @@ function maskCpf(v: string) {
     .replace(/(\d{3})(\d)/, "$1-$2");
 }
 
-type Step = "form" | "success";
+type Step = "form" | "payment" | "success";
 
 export default function CadastroGuincho() {
   const [, navigate] = useLocation();
@@ -46,6 +46,7 @@ export default function CadastroGuincho() {
   const [cnpjStatus, setCnpjStatus] = useState<"idle" | "ok" | "error">("idle");
   const [cnpjMsg, setCnpjMsg] = useState("");
   const [cepLoading, setCepLoading] = useState(false);
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
 
   const [documentType, setDocumentType] = useState<"cnpj" | "cpf">("cnpj");
   const [form, setForm] = useState({
@@ -78,7 +79,6 @@ export default function CadastroGuincho() {
     setCnpjLoading(true);
     setCnpjStatus("idle");
     try {
-      // Call BrasilAPI directly from browser (server-side is blocked by 403)
       const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`, {
         headers: { "Accept": "application/json" },
       });
@@ -88,7 +88,6 @@ export default function CadastroGuincho() {
         return;
       }
       const data = await res.json();
-      // situacao_cadastral: 2 = Ativa, 1 = Nula, 3 = Suspensa, 4 = Inapta, 8 = Baixada
       if (Number(data.situacao_cadastral) !== 2) {
         const desc = data.descricao_situacao_cadastral ?? String(data.situacao_cadastral);
         setCnpjStatus("error");
@@ -101,7 +100,6 @@ export default function CadastroGuincho() {
       const fantasia = data.nome_fantasia || razao;
       if (razao && !form.name) set("name", razao);
       if (fantasia && !form.tradingName) set("tradingName", fantasia);
-      // Auto-fill address from CNPJ data
       if (data.cep) {
         const cepClean = data.cep.replace(/\D/g, "");
         const cepFmt = cepClean.replace(/^(\d{5})(\d{3})$/, "$1-$2");
@@ -182,12 +180,77 @@ export default function CadastroGuincho() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Erro no cadastro");
       localStorage.setItem(GUINCHO_TOKEN_KEY, data.token);
-      setStep("success");
+      if (data.paymentUrl) {
+        setPaymentUrl(data.paymentUrl);
+        setStep("payment");
+      } else {
+        setStep("success");
+      }
     } catch (err: any) {
       toast({ title: err.message || "Erro no cadastro", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
+  }
+
+  if (step === "payment") {
+    return (
+      <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
+        <div className="bg-card border rounded-2xl p-8 max-w-md w-full space-y-6 shadow-lg">
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mx-auto">
+              <CreditCard className="h-8 w-8 text-primary" />
+            </div>
+            <h2 className="text-2xl font-bold">Quase lá!</h2>
+            <p className="text-muted-foreground text-sm">
+              Seu cadastro foi criado. Para ativar seu anúncio na plataforma, realize o pagamento da anuidade abaixo.
+            </p>
+          </div>
+
+          <div className="bg-muted/60 rounded-xl p-5 space-y-1 text-center">
+            <p className="text-sm text-muted-foreground">Anuidade Central dos Desmanches</p>
+            <p className="text-4xl font-bold text-primary">R$ 80<span className="text-xl font-normal text-muted-foreground">,00</span></p>
+            <p className="text-xs text-muted-foreground">válido por 12 meses · PIX, boleto ou cartão</p>
+          </div>
+
+          <div className="space-y-3">
+            <Button
+              className="w-full gap-2"
+              size="lg"
+              onClick={() => window.open(paymentUrl!, "_blank")}
+            >
+              <ExternalLink className="h-4 w-4" />
+              Ir para o pagamento
+            </Button>
+
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              size="lg"
+              onClick={() => setStep("success")}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Já realizei o pagamento
+            </Button>
+          </div>
+
+          <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-amber-800 text-xs">
+            <Clock className="h-4 w-4 shrink-0 mt-0.5" />
+            <p>
+              Após a confirmação do pagamento, seu anúncio será ativado automaticamente. Isso pode levar alguns minutos após o pagamento via PIX.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setStep("success")}
+            className="block w-full text-center text-xs text-muted-foreground underline"
+          >
+            Pagar depois
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (step === "success") {
@@ -197,7 +260,7 @@ export default function CadastroGuincho() {
           <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto" />
           <h2 className="text-2xl font-bold">Cadastro enviado!</h2>
           <p className="text-muted-foreground">
-            Seu cadastro foi recebido e está em análise. Você será notificado por e-mail assim que for aprovado.
+            Seu cadastro foi recebido. Assim que o pagamento for confirmado, seu anúncio será ativado automaticamente.
           </p>
           <p className="text-sm text-muted-foreground">
             Enquanto aguarda, seu painel de guincho já está disponível para você configurar seu perfil.
@@ -240,8 +303,12 @@ export default function CadastroGuincho() {
             </div>
           </div>
 
+          <div className="flex items-center gap-2 rounded-lg bg-primary/5 border border-primary/20 p-3 text-sm">
+            <CreditCard className="h-4 w-4 text-primary shrink-0" />
+            <span>Anuidade de <strong>R$ 80,00/ano</strong> — pague ao final do cadastro via PIX, boleto ou cartão.</span>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Dados da Empresa */}
             <div className="space-y-1">
               <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Dados da Empresa</h3>
             </div>
@@ -340,7 +407,6 @@ export default function CadastroGuincho() {
               />
             </div>
 
-            {/* Contato */}
             <div className="space-y-1 pt-2">
               <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Contato</h3>
             </div>
@@ -360,7 +426,6 @@ export default function CadastroGuincho() {
               </div>
             </div>
 
-            {/* Localização */}
             <div className="space-y-1 pt-2">
               <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Localização</h3>
             </div>
@@ -413,7 +478,6 @@ export default function CadastroGuincho() {
               </div>
             </div>
 
-            {/* Acesso */}
             <div className="space-y-1 pt-2">
               <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Dados de Acesso</h3>
             </div>
@@ -430,7 +494,7 @@ export default function CadastroGuincho() {
             </div>
 
             <Button type="submit" className="w-full" size="lg" disabled={isLoading || cnpjStatus === "error"}>
-              {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enviando cadastro...</> : "Enviar Cadastro"}
+              {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enviando cadastro...</> : "Continuar para Pagamento"}
             </Button>
 
             <p className="text-center text-xs text-muted-foreground">
