@@ -8,9 +8,9 @@ import * as storage from "../storage";
 import * as schema from "@workspace/db/schema";
 import * as asaas from "../asaas";
 import * as email from "../email";
-import { randomBytes } from "crypto";
+import { randomBytes, timingSafeEqual } from "crypto";
 import bcrypt from "bcryptjs";
-import { jwtSecret } from "../config";
+import { asaasWebhookToken, jwtSecret } from "../config";
 
 const uploadsDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadsDir)) {
@@ -2618,6 +2618,24 @@ export async function registerRoutes(app: Express) {
 
   // Webhook Asaas - confirma pagamento
   app.post("/api/billing/webhook", async (req, res) => {
+    if (!asaasWebhookToken) {
+      return res.status(503).json({ message: "Webhook não configurado" });
+    }
+
+    const receivedToken = req.headers["asaas-access-token"];
+    if (typeof receivedToken !== "string") {
+      return res.status(401).json({ message: "Não autorizado" });
+    }
+
+    const expectedTokenBuffer = Buffer.from(asaasWebhookToken);
+    const receivedTokenBuffer = Buffer.from(receivedToken);
+    if (
+      expectedTokenBuffer.length !== receivedTokenBuffer.length ||
+      !timingSafeEqual(expectedTokenBuffer, receivedTokenBuffer)
+    ) {
+      return res.status(401).json({ message: "Não autorizado" });
+    }
+
     try {
       const { event, payment } = req.body;
       if (event === "PAYMENT_RECEIVED" || event === "PAYMENT_CONFIRMED") {
