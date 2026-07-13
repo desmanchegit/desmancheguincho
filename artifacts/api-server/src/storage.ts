@@ -5,11 +5,11 @@ import * as schema from "@workspace/db/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import path from "path";
-import { fileURLToPath } from "url";
+import { mkdirSync } from "fs";
+import { databasePath } from "./config";
 
-const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const sqlitePath = path.join(currentDir, "..", "database.sqlite");
-const sqlite = new Database(sqlitePath);
+mkdirSync(path.dirname(databasePath), { recursive: true });
+const sqlite = new Database(databasePath);
 export const db = drizzle(sqlite, { schema });
 
 // Inicializa as tabelas

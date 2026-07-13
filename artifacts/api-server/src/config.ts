@@ -1,3 +1,6 @@
+import path from "path";
+import { fileURLToPath } from "url";
+
 const configuredJwtSecret = process.env.JWT_SECRET;
 
 if (!configuredJwtSecret || configuredJwtSecret.trim().length < 32) {
@@ -7,3 +10,19 @@ if (!configuredJwtSecret || configuredJwtSecret.trim().length < 32) {
 }
 
 export const jwtSecret = configuredJwtSecret;
+
+const configuredDatabasePath = process.env.DATABASE_PATH;
+const isProduction = process.env.NODE_ENV === "production";
+
+if (isProduction && !configuredDatabasePath?.trim()) {
+  throw new Error("DATABASE_PATH environment variable is required in production.");
+}
+
+if (isProduction && !path.isAbsolute(configuredDatabasePath!)) {
+  throw new Error("DATABASE_PATH must be an absolute path in production.");
+}
+
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+const defaultDatabasePath = path.join(currentDir, "..", "database.sqlite");
+
+export const databasePath = configuredDatabasePath || defaultDatabasePath;
