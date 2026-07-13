@@ -4,7 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileCheck, FileX, ExternalLink, Loader2, CheckCircle2, AlertCircle, AlertTriangle, Clock } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { getToken } from "@/lib/auth";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 
 const DOC_LABELS: Record<string, string> = {
   alvara: "Alvará de Funcionamento",
@@ -32,6 +34,21 @@ function formatDate(validUntil: number | null | undefined): string {
 
 export default function DesmancheDocsTab() {
   const { user } = useAuth();
+  const { toast } = useToast();
+
+  const downloadDocument = async (id: string) => {
+    const token = getToken();
+    const response = await fetch("/api/documents/" + id + "/download", { headers: token ? { Authorization: "Bearer " + token } : {} });
+    if (!response.ok) throw new Error("Não foi possível baixar o documento");
+    const objectUrl = URL.createObjectURL(await response.blob());
+    const link = window.document.createElement("a");
+    link.href = objectUrl;
+    link.download = "documento";
+    window.document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  };
 
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ["/api/documents/my"],
@@ -203,11 +220,9 @@ export default function DesmancheDocsTab() {
                       <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-300 text-xs">A vencer</Badge>
                     )}
                     {doc.url && (
-                      <a href={doc.url} target="_blank" rel="noopener noreferrer">
-                        <Button size="sm" variant="outline" className="w-full sm:w-auto gap-1">
-                          <ExternalLink className="w-3 h-3" /> Ver Arquivo
-                        </Button>
-                      </a>
+                      <Button size="sm" variant="outline" className="w-full sm:w-auto gap-1" onClick={() => downloadDocument(doc.id).catch((error) => toast({ title: "Erro ao baixar documento", description: error.message, variant: "destructive" }))}>
+                        <ExternalLink className="w-3 h-3" /> Ver Arquivo
+                      </Button>
                     )}
                   </div>
                 </div>

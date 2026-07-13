@@ -176,15 +176,19 @@ export default function CadastroDesmanche() {
     return (await res.json()).url;
   };
 
-  const registerDocument = async (desmancheId: string, type: string, name: string, url: string, token: string, validUntil?: number) => {
-    const body: Record<string, unknown> = { desmancheId, type, name, url };
-    if (validUntil) body.validUntil = validUntil;
-    const res = await fetch("/api/documents", {
+  const uploadPrivateDocument = async (file: File, type: string, name: string, token: string, validUntil?: number) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("type", type);
+    fd.append("name", name);
+    if (validUntil) fd.append("validUntil", String(validUntil));
+    const res = await fetch("/api/documents/upload", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify(body),
+      headers: { Authorization: "Bearer " + token },
+      body: fd,
     });
-    if (!res.ok) throw new Error("Falha ao registrar documento");
+    if (!res.ok) throw new Error("Falha no upload do documento");
+    return res.json();
   };
 
   const handleSubmit = async () => {
@@ -199,7 +203,7 @@ export default function CadastroDesmanche() {
 
     setIsSubmitting(true);
     try {
-      const user = await registerDesmanche({
+      await registerDesmanche({
         companyName:     form.companyName,
         tradingName:     form.tradingName,
         cnpj:            form.cnpj,
@@ -212,8 +216,6 @@ export default function CadastroDesmanche() {
       });
 
       const token = localStorage.getItem("peca_rapida_token") as string;
-      const desmancheId = (user as any)?.id as string;
-
       if (form.zipCode) {
         await fetch("/api/desmanches/me/address", {
           method: "PUT",
@@ -254,8 +256,7 @@ export default function CadastroDesmanche() {
         { file: detranFile!,         type: "credenciamento_detran",  name: "Credenciamento Detran",                 validUntil: toTs(detranExpiry) },
       ];
       for (const doc of docs) {
-        const url = await uploadFile(doc.file, token);
-        await registerDocument(desmancheId, doc.type, doc.name, url, token, doc.validUntil);
+        await uploadPrivateDocument(doc.file, doc.type, doc.name, token, doc.validUntil);
       }
 
       // Configura cobrança como por transação (único modelo disponível)

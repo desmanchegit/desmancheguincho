@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ShieldAlert, FileCheck, XCircle, FileWarning, Loader2, RefreshCw } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getToken } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 
 const REQUIRED_DOCS = [
@@ -91,6 +92,20 @@ export default function ApprovalsTab() {
     if (rejectingId !== null && rejectionReason.trim()) {
       rejectMutation.mutate({ id: rejectingId, rejectionReason: rejectionReason.trim() });
     }
+  };
+
+  const downloadDocument = async (id: string) => {
+    const token = getToken();
+    const response = await fetch("/api/documents/" + id + "/download", { headers: token ? { Authorization: "Bearer " + token } : {} });
+    if (!response.ok) throw new Error("Não foi possível baixar o documento");
+    const objectUrl = URL.createObjectURL(await response.blob());
+    const link = window.document.createElement("a");
+    link.href = objectUrl;
+    link.download = "documento";
+    window.document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
   };
 
   if (isLoading) {
@@ -191,14 +206,10 @@ export default function ApprovalsTab() {
                         <li key={doc.id} className="flex items-center gap-2 text-sm bg-muted/50 p-2 rounded border">
                           <div className="w-2 h-2 rounded-full bg-green-500" />
                           {doc.name || REQUIRED_DOCS.find((rd) => rd.type === doc.type)?.label || doc.type}
-                          {doc.url && doc.url.startsWith("/uploads/") ? (
-                            <a href={doc.url} target="_blank" rel="noopener noreferrer" className="ml-auto text-xs text-blue-500 hover:underline">
-                              Ver PDF
-                            </a>
-                          ) : doc.url ? (
-                            <a href={doc.url} target="_blank" rel="noopener noreferrer" className="ml-auto text-xs text-blue-500 hover:underline">
+                          {doc.url ? (
+                            <Button variant="link" className="ml-auto h-auto p-0 text-xs text-blue-500" onClick={() => downloadDocument(doc.id).catch((error) => toast({ title: "Erro ao baixar documento", description: error.message, variant: "destructive" }))}>
                               Ver Documento
-                            </a>
+                            </Button>
                           ) : null}
                         </li>
                       ))}

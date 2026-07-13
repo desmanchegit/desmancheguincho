@@ -818,6 +818,10 @@ export async function getDocumentsByDesmanche(desmancheId: string) {
   });
 }
 
+export async function getDocumentById(id: string) {
+  return db.query.documents.findFirst({ where: eq(schema.documents.id, id) });
+}
+
 export async function updateDocumentStatus(id: string, status: string) {
   await db.update(schema.documents)
     .set({ status: status as any })

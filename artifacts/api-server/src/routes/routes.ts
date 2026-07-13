@@ -3,13 +3,14 @@ import jwt from "jsonwebtoken";
 import { z } from "zod/v4";
 import multer from "multer";
 import path from "path";
+import fs from "fs";
 import * as storage from "../storage";
 import * as schema from "@workspace/db/schema";
 import * as asaas from "../asaas";
 import * as email from "../email";
 import { randomBytes, timingSafeEqual } from "crypto";
 import bcrypt from "bcryptjs";
-import { asaasWebhookToken, jwtSecret, publicUploadsDir } from "../config";
+import { asaasWebhookToken, jwtSecret, privateDocumentsDir, publicUploadsDir } from "../config";
 
 const uploadStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, publicUploadsDir),
@@ -32,6 +33,95 @@ const upload = multer({
     }
   },
 });
+
+const documentMimeTypesByExtension: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+};
+const documentTypes = new Set(["alvara", "credenciamento_detran", "contrato_social", "documento_responsavel", "documento_empresa"]);
+const documentNameMaxLength = 255;
+
+const privateDocumentStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, privateDocumentsDir),
+  filename: (_req, file, cb) => cb(null, randomBytes(24).toString("hex") + path.extname(file.originalname).toLowerCase()),
+});
+
+const privateDocumentUpload = multer({
+  storage: privateDocumentStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const extension = path.extname(file.originalname).toLowerCase();
+    if (documentMimeTypesByExtension[extension] !== file.mimetype) {
+      cb(new Error("Tipo de arquivo não permitido. Use PDF, JPG, JPEG, PNG ou WebP."));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
+function privateDocumentPath(key: string): string | null {
+  if (!key || path.isAbsolute(key) || key.includes("..") || !key.startsWith("documents/")) return null;
+  const relative = key.slice("documents/".length);
+  if (!relative || relative !== path.basename(relative)) return null;
+  const resolved = path.resolve(privateDocumentsDir, relative);
+  const relativeToDocuments = path.relative(privateDocumentsDir, resolved);
+  if (relativeToDocuments.startsWith("..") || path.isAbsolute(relativeToDocuments)) return null;
+  return resolved;
+}
+
+function legacyPublicDocumentPath(url: string): string | null {
+  if (!url.startsWith("/uploads/")) return null;
+  const filename = url.slice("/uploads/".length);
+  if (!filename || filename !== path.basename(filename) || filename.includes("..")) return null;
+  const resolved = path.resolve(publicUploadsDir, filename);
+  const relativeToPublic = path.relative(publicUploadsDir, resolved);
+  if (relativeToPublic.startsWith("..") || path.isAbsolute(relativeToPublic)) return null;
+  return resolved;
+}
+
+function documentContentType(filename: string): string {
+  switch (path.extname(filename).toLowerCase()) {
+    case ".pdf": return "application/pdf";
+    case ".jpg":
+    case ".jpeg": return "image/jpeg";
+    case ".png": return "image/png";
+    case ".webp": return "image/webp";
+    default: return "application/octet-stream";
+  }
+}
+
+function hasAllowedDocumentSignature(filePath: string): boolean {
+  const header = Buffer.alloc(12);
+  const descriptor = fs.openSync(filePath, "r");
+  try { fs.readSync(descriptor, header, 0, header.length, 0); } finally { fs.closeSync(descriptor); }
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === ".pdf") return header.subarray(0, 5).toString() === "%PDF-";
+  if (extension === ".jpg" || extension === ".jpeg") return header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
+  if (extension === ".png") return header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  return extension === ".webp" && header.subarray(0, 4).toString() === "RIFF" && header.subarray(8, 12).toString() === "WEBP";
+}
+
+function removeUploadedDocument(file?: Express.Multer.File) {
+  if (!file?.path) return;
+  try {
+    fs.unlinkSync(file.path);
+  } catch (error: any) {
+    if (error?.code !== "ENOENT") { console.error("Could not remove private document after failed request:", error); }
+  }
+}
+
+function parseDocumentValidUntil(value: unknown): Date | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string" && typeof value !== "number") throw new Error("invalid_valid_until");
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0 || !Number.isInteger(timestamp)) throw new Error("invalid_valid_until");
+  const date = new Date(timestamp * 1000);
+  if (Number.isNaN(date.getTime())) throw new Error("invalid_valid_until");
+  return date;
+}
 
 // Middleware de autenticação
 function authMiddleware(req: Request, res: Response, next: Function) {
@@ -1341,36 +1431,87 @@ export async function registerRoutes(app: Express) {
     }
   });
   
-  app.post("/api/documents", authMiddleware, requireType(["desmanche"]), async (req, res) => {
+  app.post("/api/documents/upload", authMiddleware, requireType(["desmanche", "admin"]), (req, res, next) => {
+    privateDocumentUpload.single("file")(req, res, (err) => {
+      if (err instanceof multer.MulterError) return res.status(400).json({ message: "Erro no upload: " + err.message });
+      if (err) return res.status(400).json({ message: err.message });
+      next();
+    });
+  }, async (req, res) => {
+    const uploadedFile = req.file;
+    let documentCreated = false;
     try {
-      const { type, name, url, validUntil } = req.body;
-      const desmancheId = (req as any).user.id;
+      if (!uploadedFile) return res.status(400).json({ message: "Nenhum arquivo enviado" });
 
-      const validTypes = ["alvara", "credenciamento_detran", "contrato_social", "documento_responsavel", "documento_empresa"];
-      if (!type || !name || !url || !validTypes.includes(type)) {
-        return res.status(400).json({ message: "Dados inválidos: type, name e url são obrigatórios" });
+      const { type, name, validUntil, desmancheId: requestedDesmancheId } = req.body;
+      if (typeof type !== "string" || !documentTypes.has(type)) {
+        return res.status(400).json({ message: "Tipo de documento inválido" });
+      }
+      if (typeof name !== "string" || !name.trim() || name.trim().length > documentNameMaxLength) {
+        return res.status(400).json({ message: "Nome do documento inválido" });
+      }
+      const validUntilDate = parseDocumentValidUntil(validUntil);
+      if (!hasAllowedDocumentSignature(uploadedFile.path)) {
+        return res.status(400).json({ message: "Conteúdo de arquivo não permitido" });
       }
 
-      // validUntil vem do frontend como Unix timestamp em segundos (número)
-      // O Drizzle espera Date, então convertemos aqui antes de salvar
-      const validUntilDate: Date | undefined = validUntil
-        ? new Date(Number(validUntil) * 1000)
-        : undefined;
+      const user = (req as any).user;
+      let desmancheId: string;
+      if (user.type === "admin") {
+        if (typeof requestedDesmancheId !== "string" || !requestedDesmancheId.trim()) {
+          return res.status(400).json({ message: "desmancheId é obrigatório para administrador" });
+        }
+        desmancheId = requestedDesmancheId;
+        if (!await storage.getDesmancheById(desmancheId)) {
+          return res.status(404).json({ message: "Desmanche não encontrado" });
+        }
+      } else {
+        // Nunca aceite que um desmanche escolha o proprietário pelo corpo da requisição.
+        desmancheId = user.id;
+      }
 
       const document = await storage.createDocument({
         desmancheId,
         type: type as any,
-        name,
-        url,
+        name: name.trim(),
+        url: "documents/" + uploadedFile.filename,
         validUntil: validUntilDate,
       });
-      res.status(201).json(document);
-    } catch (error) {
-      console.error("Create document error:", error);
-      res.status(500).json({ message: "Erro ao criar documento" });
+      documentCreated = true;
+      return res.status(201).json(document);
+    } catch (error: any) {
+      if (error?.message === "invalid_valid_until") {
+        return res.status(400).json({ message: "validUntil inválido" });
+      }
+      console.error("Create private document error:", error);
+      return res.status(500).json({ message: "Erro ao criar documento" });
+    } finally {
+      // O arquivo só permanece quando o registro foi criado com sucesso.
+      if (!documentCreated) removeUploadedDocument(uploadedFile);
     }
   });
-  
+
+  app.get("/api/documents/:id/download", authMiddleware, async (req, res) => {
+    try {
+      const document = await storage.getDocumentById(req.params.id);
+      if (!document) return res.status(404).json({ message: "Documento não encontrado" });
+
+      const user = (req as any).user;
+      if (user.type !== "admin" && (user.type !== "desmanche" || user.id !== document.desmancheId)) {
+        return res.status(403).json({ message: "Acesso negado" });
+      }
+
+      const filePath = privateDocumentPath(document.url) || legacyPublicDocumentPath(document.url);
+      if (!filePath || !fs.existsSync(filePath)) return res.status(404).json({ message: "Arquivo não encontrado" });
+
+      res.type(documentContentType(filePath));
+      res.download(filePath, path.basename(document.name || filePath));
+    } catch (error) {
+      console.error("Download document error:", error);
+      res.status(500).json({ message: "Erro ao baixar documento" });
+    }
+  });
+
   app.patch("/api/documents/:id/status", authMiddleware, requireType(["admin"]), async (req, res) => {
     try {
       const { status } = req.body;
