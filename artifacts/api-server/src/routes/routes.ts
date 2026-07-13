@@ -10,6 +10,7 @@ import * as asaas from "../asaas";
 import * as email from "../email";
 import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
+import { jwtSecret } from "../config";
 
 const uploadsDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadsDir)) {
@@ -38,8 +39,6 @@ const upload = multer({
   },
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key-change-in-production";
-
 // Middleware de autenticação
 function authMiddleware(req: Request, res: Response, next: Function) {
   const token = req.headers.authorization?.replace("Bearer ", "");
@@ -49,7 +48,7 @@ function authMiddleware(req: Request, res: Response, next: Function) {
   }
   
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, jwtSecret) as any;
     (req as any).user = decoded;
     next();
   } catch (error) {
@@ -110,7 +109,7 @@ export async function registerRoutes(app: Express) {
 
       const token = jwt.sign(
         { id: user.id, email: user.email, type: user.type },
-        JWT_SECRET,
+        jwtSecret,
         { expiresIn: "7d" }
       );
       
@@ -160,7 +159,7 @@ export async function registerRoutes(app: Express) {
       
       const token = jwt.sign(
         { id: desmanche.id, email: desmanche.email, type: "desmanche" },
-        JWT_SECRET,
+        jwtSecret,
         { expiresIn: "7d" }
       );
       
@@ -231,7 +230,7 @@ export async function registerRoutes(app: Express) {
       
       const token = jwt.sign(
         { id: user!.id, email: user!.email, type: user!.type },
-        JWT_SECRET,
+        jwtSecret,
         { expiresIn: "7d" }
       );
       
@@ -377,7 +376,7 @@ export async function registerRoutes(app: Express) {
 
       const token = jwt.sign(
         { id: desmanche!.id, email: desmanche!.email, type: "desmanche" },
-        JWT_SECRET,
+        jwtSecret,
         { expiresIn: "7d" }
       );
       
@@ -2713,7 +2712,7 @@ export async function registerRoutes(app: Express) {
       const token = req.headers.authorization?.replace("Bearer ", "");
       if (token) {
         try {
-          const decoded = jwt.verify(token, JWT_SECRET) as any;
+          const decoded = jwt.verify(token, jwtSecret) as any;
           if (decoded?.type === "admin") onlyActive = false;
         } catch {}
       }
@@ -3299,7 +3298,7 @@ export async function registerRoutes(app: Express) {
 
       const token = jwt.sign(
         { id: guincho.id, email: guincho.email, type: "guincho" },
-        JWT_SECRET,
+        jwtSecret,
         { expiresIn: "7d" }
       );
       res.status(201).json({
@@ -3340,7 +3339,7 @@ export async function registerRoutes(app: Express) {
       }
       const token = jwt.sign(
         { id: guincho.id, email: guincho.email, type: "guincho" },
-        JWT_SECRET,
+        jwtSecret,
         { expiresIn: "7d" }
       );
       res.json({
