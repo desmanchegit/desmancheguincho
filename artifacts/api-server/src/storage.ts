@@ -2563,6 +2563,17 @@ export function updateGuinchoAsaas(id: string, asaasCustomerId: string, asaasPay
   sqlite.prepare("UPDATE guinchos SET asaas_customer_id = ?, asaas_payment_id = ? WHERE id = ?").run(asaasCustomerId, asaasPaymentId, id);
 }
 
+export function updateGuinchoAsaasFull(id: string, opts: {
+  asaasCustomerId: string;
+  asaasPaymentId?: string;
+  asaasSubscriptionId?: string;
+  plan?: "annual" | "monthly";
+}): void {
+  sqlite.prepare(
+    "UPDATE guinchos SET asaas_customer_id = ?, asaas_payment_id = ?, asaas_subscription_id = ?, plan = COALESCE(?, plan) WHERE id = ?"
+  ).run(opts.asaasCustomerId, opts.asaasPaymentId ?? null, opts.asaasSubscriptionId ?? null, opts.plan ?? null, id);
+}
+
 export function getGuinchoByAsaasPaymentId(paymentId: string): any | undefined {
   return sqlite.prepare("SELECT * FROM guinchos WHERE asaas_payment_id = ?").get(paymentId) as any;
 }

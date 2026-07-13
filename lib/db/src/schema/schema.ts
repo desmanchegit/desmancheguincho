@@ -544,6 +544,8 @@ export const guinchos = sqliteTable("guinchos", {
   rejectionReason: text("rejection_reason"),
   asaasCustomerId: text("asaas_customer_id"),
   asaasPaymentId: text("asaas_payment_id"),
+  asaasSubscriptionId: text("asaas_subscription_id"),
+  plan: text("plan", { enum: ["annual", "monthly"] }).notNull().default("annual"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 });
 

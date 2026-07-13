@@ -3235,7 +3235,8 @@ export async function registerRoutes(app: Express) {
         description: `Novo guincho cadastrado: ${guincho.trading_name} (${data.documentType === "cpf" ? "CPF" : "CNPJ"}: ${data.documentType === "cpf" ? guincho.cpf : guincho.cnpj})`,
       });
 
-      // Create Asaas customer + annual charge of R$80
+      // Create Asaas customer + charge (annual R$80) or subscription (monthly R$10)
+      const plan: "annual" | "monthly" = req.body.plan === "monthly" ? "monthly" : "annual";
       let paymentUrl: string | null = null;
       if (asaas.isAsaasConfigured()) {
         try {
@@ -3247,16 +3248,39 @@ export async function registerRoutes(app: Express) {
             cpfCnpj,
           });
           if (customer && !("error" in customer)) {
-            const charge = await asaas.createAsaasCharge({
-              customerId: customer.id,
-              value: 80,
-              dueDate: asaas.getDueDateString(3),
-              description: "Anuidade Central dos Desmanches — Guincho",
-              billingType: "UNDEFINED",
-            });
-            if (charge) {
-              storage.updateGuinchoAsaas(guincho.id, customer.id, charge.id);
-              paymentUrl = charge.invoiceUrl ?? null;
+            if (plan === "monthly") {
+              const subscription = await asaas.createAsaasSubscription({
+                customerId: customer.id,
+                value: 10,
+                nextDueDate: asaas.getDueDateString(3),
+                description: "Assinatura Mensal Central dos Desmanches — Guincho",
+                billingType: "UNDEFINED",
+                cycle: "MONTHLY",
+              });
+              if (subscription) {
+                storage.updateGuinchoAsaasFull(guincho.id, {
+                  asaasCustomerId: customer.id,
+                  asaasSubscriptionId: subscription.id,
+                  plan: "monthly",
+                });
+                paymentUrl = subscription.invoiceUrl ?? null;
+              }
+            } else {
+              const charge = await asaas.createAsaasCharge({
+                customerId: customer.id,
+                value: 80,
+                dueDate: asaas.getDueDateString(3),
+                description: "Anuidade Central dos Desmanches — Guincho",
+                billingType: "UNDEFINED",
+              });
+              if (charge) {
+                storage.updateGuinchoAsaasFull(guincho.id, {
+                  asaasCustomerId: customer.id,
+                  asaasPaymentId: charge.id,
+                  plan: "annual",
+                });
+                paymentUrl = charge.invoiceUrl ?? null;
+              }
             }
           }
         } catch (err) {

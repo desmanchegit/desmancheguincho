@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle2, Truck, AlertCircle, ArrowLeft, CreditCard, ExternalLink, Clock } from "lucide-react";
+import { Loader2, CheckCircle2, Truck, AlertCircle, ArrowLeft, CreditCard, ExternalLink, Clock, Calendar, RefreshCw } from "lucide-react";
 import logoImg from "@assets/Design_sem_nome_(23)_1772229532951.png";
 import GuinchoContractModal from "@/components/guincho/GuinchoContractModal";
 
@@ -36,12 +36,14 @@ function maskCpf(v: string) {
     .replace(/(\d{3})(\d)/, "$1-$2");
 }
 
-type Step = "form" | "payment" | "success";
+type Step = "form" | "plan" | "payment" | "success";
+type Plan = "annual" | "monthly";
 
 export default function CadastroGuincho() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [step, setStep] = useState<Step>("form");
+  const [selectedPlan, setSelectedPlan] = useState<Plan>("annual");
   const [isLoading, setIsLoading] = useState(false);
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [cnpjStatus, setCnpjStatus] = useState<"idle" | "ok" | "error">("idle");
@@ -153,6 +155,14 @@ export default function CadastroGuincho() {
       toast({ title: "Senha deve ter ao menos 6 caracteres", variant: "destructive" });
       return;
     }
+    if (!acceptedContract) {
+      toast({ title: "Aceite os termos para continuar", variant: "destructive" });
+      return;
+    }
+    setStep("plan");
+  }
+
+  async function handlePlanConfirm() {
     setIsLoading(true);
     try {
       const payload = {
@@ -174,6 +184,7 @@ export default function CadastroGuincho() {
         city: form.city,
         state: form.state,
         serviceRadius: parseInt(form.serviceRadius) || 50,
+        plan: selectedPlan,
       };
       const res = await fetch("/api/guinchos/register", {
         method: "POST",
@@ -196,7 +207,88 @@ export default function CadastroGuincho() {
     }
   }
 
+  if (step === "plan") {
+    return (
+      <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
+        <div className="bg-card border rounded-2xl p-8 max-w-md w-full space-y-6 shadow-lg">
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mx-auto">
+              <CreditCard className="h-8 w-8 text-primary" />
+            </div>
+            <h2 className="text-2xl font-bold">Escolha seu plano</h2>
+            <p className="text-muted-foreground text-sm">
+              Selecione a forma de pagamento que preferir para ativar seu anúncio.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {/* Annual plan */}
+            <button
+              type="button"
+              onClick={() => setSelectedPlan("annual")}
+              className={`w-full rounded-xl border-2 p-4 text-left transition-colors ${
+                selectedPlan === "annual"
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-primary/40"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-primary" />
+                  <span className="font-semibold">Anual</span>
+                </div>
+                <span className="text-xs bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">Mais econômico</span>
+              </div>
+              <p className="text-3xl font-bold text-primary">R$ 80<span className="text-base font-normal text-muted-foreground">/ano</span></p>
+              <p className="text-xs text-muted-foreground mt-1">Pagamento único · válido por 12 meses · PIX, boleto ou cartão</p>
+            </button>
+
+            {/* Monthly plan */}
+            <button
+              type="button"
+              onClick={() => setSelectedPlan("monthly")}
+              className={`w-full rounded-xl border-2 p-4 text-left transition-colors ${
+                selectedPlan === "monthly"
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-primary/40"
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <RefreshCw className="h-4 w-4 text-primary" />
+                <span className="font-semibold">Mensal</span>
+              </div>
+              <p className="text-3xl font-bold text-primary">R$ 10<span className="text-base font-normal text-muted-foreground">/mês</span></p>
+              <p className="text-xs text-muted-foreground mt-1">Renovação automática · cancele quando quiser · PIX, boleto ou cartão</p>
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            <Button
+              className="w-full gap-2"
+              size="lg"
+              onClick={handlePlanConfirm}
+              disabled={isLoading}
+            >
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              {isLoading ? "Criando cadastro..." : "Confirmar e ir para pagamento"}
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full"
+              size="sm"
+              onClick={() => setStep("form")}
+              disabled={isLoading}
+            >
+              ← Voltar ao formulário
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (step === "payment") {
+    const isMonthly = selectedPlan === "monthly";
     return (
       <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
         <div className="bg-card border rounded-2xl p-8 max-w-md w-full space-y-6 shadow-lg">
@@ -206,14 +298,22 @@ export default function CadastroGuincho() {
             </div>
             <h2 className="text-2xl font-bold">Quase lá!</h2>
             <p className="text-muted-foreground text-sm">
-              Seu cadastro foi criado. Para ativar seu anúncio na plataforma, realize o pagamento da anuidade abaixo.
+              Seu cadastro foi criado. Para ativar seu anúncio na plataforma, realize o pagamento abaixo.
             </p>
           </div>
 
           <div className="bg-muted/60 rounded-xl p-5 space-y-1 text-center">
-            <p className="text-sm text-muted-foreground">Anuidade Central dos Desmanches</p>
-            <p className="text-4xl font-bold text-primary">R$ 80<span className="text-xl font-normal text-muted-foreground">,00</span></p>
-            <p className="text-xs text-muted-foreground">válido por 12 meses · PIX, boleto ou cartão</p>
+            <p className="text-sm text-muted-foreground">
+              {isMonthly ? "Assinatura Mensal — Central dos Desmanches" : "Anuidade Central dos Desmanches"}
+            </p>
+            {isMonthly ? (
+              <p className="text-4xl font-bold text-primary">R$ 10<span className="text-xl font-normal text-muted-foreground">/mês</span></p>
+            ) : (
+              <p className="text-4xl font-bold text-primary">R$ 80<span className="text-xl font-normal text-muted-foreground">,00</span></p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {isMonthly ? "Renovação automática mensal · PIX, boleto ou cartão" : "válido por 12 meses · PIX, boleto ou cartão"}
+            </p>
           </div>
 
           <div className="space-y-3">
@@ -306,9 +406,9 @@ export default function CadastroGuincho() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 rounded-lg bg-primary/5 border border-primary/20 p-3 text-sm">
-            <CreditCard className="h-4 w-4 text-primary shrink-0" />
-            <span>Anuidade de <strong>R$ 80,00/ano</strong> — pague ao final do cadastro via PIX, boleto ou cartão.</span>
+          <div className="flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/20 p-3 text-sm">
+            <CreditCard className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+            <span>Escolha seu plano ao final: <strong>R$ 80/ano</strong> (pagamento único) ou <strong>R$ 10/mês</strong> (assinatura mensal).</span>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">

@@ -105,6 +105,40 @@ export async function getAsaasChargeStatus(chargeId: string): Promise<string | n
   }
 }
 
+export async function createAsaasSubscription(data: {
+  customerId: string;
+  value: number;
+  nextDueDate: string;
+  description: string;
+  billingType: "BOLETO" | "PIX" | "UNDEFINED";
+  cycle: "MONTHLY" | "YEARLY";
+}): Promise<{ id: string; invoiceUrl?: string; status: string } | null> {
+  if (!isAsaasConfigured()) return null;
+  try {
+    const res = await fetch(`${getBaseUrl()}/subscriptions`, {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({
+        customer: data.customerId,
+        billingType: data.billingType,
+        value: data.value,
+        nextDueDate: data.nextDueDate,
+        description: data.description,
+        cycle: data.cycle,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error("Asaas create subscription error:", err);
+      return null;
+    }
+    return (await res.json()) as { id: string; invoiceUrl?: string; status: string };
+  } catch (e) {
+    console.error("Asaas subscription error:", e);
+    return null;
+  }
+}
+
 export function getDueDateString(daysFromNow: number = 3): string {
   const d = new Date();
   d.setDate(d.getDate() + daysFromNow);
