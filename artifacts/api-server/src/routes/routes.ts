@@ -69,6 +69,14 @@ function requireType(types: string[]) {
 }
 
 export async function registerRoutes(app: Express) {
+  const demoSeedEnabled = process.env.ENABLE_DEMO_SEED === "true";
+
+  if (process.env.NODE_ENV === "production" && demoSeedEnabled) {
+    throw new Error(
+      "ENABLE_DEMO_SEED=true is not allowed when NODE_ENV=production. Refusing to start with demonstration data enabled.",
+    );
+  }
+
   const express = await import("express");
   app.use("/api/uploads", express.default.static(uploadsDir));
   // ============================================
@@ -3103,9 +3111,10 @@ export async function registerRoutes(app: Express) {
     }
   }
 
-  // Seed database
-  await storage.seedDatabase();
-  console.log("Database seeded successfully");
+  if (demoSeedEnabled) {
+    await storage.seedDemoDatabase();
+    console.log("Demonstration database seeded successfully");
+  }
 
   // ─── ACTIVITY LOG ROUTE ──────────────────────────────────────────────────────
   app.get("/api/admin/activity-logs", authMiddleware, requireType(["admin"]), async (req, res) => {

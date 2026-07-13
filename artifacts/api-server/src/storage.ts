@@ -2126,7 +2126,7 @@ export function deleteBrandLogo(id: string) {
   sqlite.prepare("DELETE FROM brand_logos WHERE id = ?").run(id);
 }
 
-export async function seedDatabase() {
+export async function seedDemoDatabase() {
   // Verifica se já existe admin
   const admin = await getUserByEmail('admin@centraldesmanches.com');
   if (!admin) {
