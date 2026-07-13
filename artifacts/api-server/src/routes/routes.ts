@@ -3,22 +3,16 @@ import jwt from "jsonwebtoken";
 import { z } from "zod/v4";
 import multer from "multer";
 import path from "path";
-import fs from "fs";
 import * as storage from "../storage";
 import * as schema from "@workspace/db/schema";
 import * as asaas from "../asaas";
 import * as email from "../email";
 import { randomBytes, timingSafeEqual } from "crypto";
 import bcrypt from "bcryptjs";
-import { asaasWebhookToken, jwtSecret } from "../config";
-
-const uploadsDir = path.join(process.cwd(), "uploads");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+import { asaasWebhookToken, jwtSecret, publicUploadsDir } from "../config";
 
 const uploadStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadsDir),
+  destination: (_req, _file, cb) => cb(null, publicUploadsDir),
   filename: (_req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     cb(null, uniqueSuffix + path.extname(file.originalname));
@@ -77,7 +71,8 @@ export async function registerRoutes(app: Express) {
   }
 
   const express = await import("express");
-  app.use("/api/uploads", express.default.static(uploadsDir));
+  app.use("/uploads", express.default.static(publicUploadsDir));
+  app.use("/api/uploads", express.default.static(publicUploadsDir));
   // ============================================
   // AUTH ROUTES
   // ============================================
