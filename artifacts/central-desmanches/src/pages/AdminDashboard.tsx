@@ -227,8 +227,8 @@ export default function AdminDashboard() {
 
   const SidebarContent = () => (
     <>
-      <div className="flex items-center justify-center px-4 py-6 border-b border-border">
-        <img src={logoImg} alt="Central dos Desmanches" className="h-40 w-auto drop-shadow-sm" />
+      <div className="flex items-center justify-center px-4 py-4 border-b border-border">
+        <img src={logoImg} alt="Central dos Desmanches" className="h-20 w-auto drop-shadow-sm" />
       </div>
       
       <div className="py-4 px-3 space-y-1">
@@ -303,7 +303,7 @@ export default function AdminDashboard() {
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-64 p-0 flex flex-col">
+              <SheetContent side="left" className="w-64 p-0 flex flex-col overflow-y-auto">
                 <SidebarContent />
               </SheetContent>
             </Sheet>
@@ -313,12 +313,21 @@ export default function AdminDashboard() {
             </div>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             {user?.id && <TourHelpButton userId={user.id} role="admin" />}
             <Link href="/">
               <Button variant="outline" size="sm" className="hidden sm:flex">Ver Site</Button>
             </Link>
-            <Button variant="ghost" size="icon" className="relative">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="md:hidden text-destructive hover:bg-destructive/10 px-2"
+              onClick={logout}
+              title="Sair"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="relative hidden sm:flex">
               <Bell className="h-5 w-5" />
               <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive" />
             </Button>

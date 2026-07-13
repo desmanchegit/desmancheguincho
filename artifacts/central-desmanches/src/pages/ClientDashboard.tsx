@@ -165,7 +165,7 @@ export default function ClientDashboard() {
             >
               <X className="h-5 w-5" />
             </Button>
-            <img src={logoImg} alt="Central dos Desmanches" className="h-32 w-auto" />
+            <img src={logoImg} alt="Central dos Desmanches" className="h-20 w-auto" />
           </div>
 
           <div className="p-4 border-b">

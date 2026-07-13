@@ -149,8 +149,8 @@ export default function DesmancheDashboard() {
 
   const SidebarContent = () => (
     <>
-      <div className="flex items-center justify-center px-4 py-6 border-b border-slate-800 bg-slate-950">
-        <img src={logoImg} alt="Central dos Desmanches" className="h-40 w-auto drop-shadow-sm brightness-110" />
+      <div className="flex items-center justify-center px-4 py-4 border-b border-slate-800 bg-slate-950">
+        <img src={logoImg} alt="Central dos Desmanches" className="h-20 w-auto drop-shadow-sm brightness-110" />
       </div>
       
       <div className="p-4 border-b border-slate-800 bg-slate-900/50">
@@ -228,7 +228,7 @@ export default function DesmancheDashboard() {
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-64 p-0 bg-slate-900 border-r border-slate-800 text-slate-300 flex flex-col">
+              <SheetContent side="left" className="w-64 p-0 bg-slate-900 border-r border-slate-800 text-slate-300 flex flex-col overflow-y-auto">
                 <SidebarContent />
               </SheetContent>
             </Sheet>
@@ -237,7 +237,7 @@ export default function DesmancheDashboard() {
             </div>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             {totalUnread > 0 && (
               <button
                 onClick={() => handleSetTab('chat')}
@@ -251,7 +251,16 @@ export default function DesmancheDashboard() {
             )}
             {user?.id && <TourHelpButton userId={user.id} role="desmanche" />}
             <Button variant="outline" size="sm" className="hidden sm:flex" onClick={logout}>Sair do Painel</Button>
-            <Button variant="ghost" size="icon" className="relative text-slate-600">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="sm:hidden text-red-500 hover:bg-red-500/10 px-2"
+              onClick={logout}
+              title="Sair"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="relative text-slate-600 hidden sm:flex">
               <Bell className="h-5 w-5" />
             </Button>
           </div>

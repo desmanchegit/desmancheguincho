@@ -430,8 +430,9 @@ export default function GuinhoDashboard() {
         <Link href="/guinchos">
           <Button variant="outline" size="sm" className="hidden sm:flex">Ver Catálogo</Button>
         </Link>
-        <Button variant="ghost" size="sm" onClick={handleLogout} className="text-muted-foreground">
+        <Button variant="ghost" size="sm" onClick={handleLogout} className="text-destructive hover:bg-destructive/10 gap-1.5">
           <LogOut className="h-4 w-4" />
+          <span className="hidden sm:inline">Sair</span>
         </Button>
       </nav>
 
