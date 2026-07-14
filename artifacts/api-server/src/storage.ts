@@ -14,9 +14,14 @@ import {
 } from "./asaas-intents";
 import { createAsaasCustomerLinkStore } from "./asaas-customer-links";
 import { createAsaasPaymentLinkStore } from "./asaas-payment-links";
+import {
+  createPerTransactionBillingStore,
+  initializePerTransactionBillingIndex,
+} from "./per-transaction-billing";
 
 mkdirSync(path.dirname(databasePath), { recursive: true });
-const sqlite = new Database(databasePath);
+const sqlite = new Database(databasePath, { timeout: 5000 });
+sqlite.pragma("busy_timeout = 5000");
 export const db = drizzle(sqlite, { schema });
 
 // Inicializa as tabelas
@@ -303,6 +308,7 @@ sqlite.exec(`
 // Estrutura aditiva para idempotência de criações Asaas. Nenhum fluxo de
 // negócio a utiliza nesta etapa; apenas expomos operações para a integração futura.
 initializeAsaasCreationIntentSchema(sqlite);
+initializePerTransactionBillingIndex(sqlite);
 const asaasCreationIntentStore = createAsaasCreationIntentStore(sqlite);
 export const createOrGetAsaasCreationIntent = asaasCreationIntentStore.createOrGetAsaasCreationIntent;
 export const getAsaasCreationIntent = asaasCreationIntentStore.getAsaasCreationIntent;
@@ -345,6 +351,8 @@ export const getBillingTransactionForAsaasPayment = asaasPaymentLinkStore.getBil
 export const persistOrReuseAsaasDueDate = asaasPaymentLinkStore.persistOrReuseAsaasDueDate;
 export const associateAsaasCreationIntentToBillingTransaction = asaasPaymentLinkStore.associateAsaasCreationIntent;
 export const completeAsaasPaymentForBillingTransaction = asaasPaymentLinkStore.completeAsaasPayment;
+const perTransactionBillingStore = createPerTransactionBillingStore(sqlite);
+export const createOrGetPerTransactionBilling = perTransactionBillingStore.createOrGetPerTransactionBilling;
 
 // ── Migrate: add permissions column to users ──
 try {
@@ -496,11 +504,10 @@ try { sqlite.exec(`ALTER TABLE negotiations ADD COLUMN review_deadline_at INTEGE
   }
 }
 
-// Migração: ciclo mensal — atualizar billing_model existente de per_transaction para monthly_cycle
-// e normalizar current_period_start para ciclos sem transações acumuladas
+// Normalização segura do ciclo mensal: ciclos sem transações acumuladas não
+// devem manter um current_period_start ativo.
 try {
-  sqlite.exec(`UPDATE desmanche_billing SET billing_model = 'monthly_cycle' WHERE billing_model = 'per_transaction'`);
-  sqlite.exec(`UPDATE desmanche_billing SET current_period_start = 0 WHERE monthly_transaction_count = 0 AND current_period_start > 0`);
+  sqlite.exec(`UPDATE desmanche_billing SET current_period_start = 0 WHERE billing_model = 'monthly_cycle' AND monthly_transaction_count = 0 AND current_period_start > 0`);
 } catch (e) {}
 
 sqlite.exec(`

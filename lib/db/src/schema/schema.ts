@@ -82,7 +82,9 @@ export const desmancheBilling = sqliteTable("desmanche_billing", {
 export const billingTransactions = sqliteTable("billing_transactions", {
   id: text("id").primaryKey().default(sql`(lower(hex(randomblob(16)))`),
   desmancheId: text("desmanche_id").references(() => desmanches.id).notNull(),
-  negotiationId: text("negotiation_id").references(() => desmanches.id),
+  // Runtime SQLite keeps this optional and currently has no FK. Do not declare
+  // the old, incorrect desmanches.id reference here.
+  negotiationId: text("negotiation_id"),
   amount: real("amount").notNull(),
   status: text("status", { enum: ["pending", "paid", "failed", "exempt", "billed"] }).notNull().default("pending"),
   type: text("type", { enum: ["per_transaction", "subscription", "monthly_cycle"] }).notNull().default("monthly_cycle"),

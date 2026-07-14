@@ -3187,15 +3187,17 @@ export async function registerRoutes(app: Express) {
 
   // Billing helper
   async function triggerTransactionBilling(desmancheId: string, negotiationId: string) {
-    // Idempotency guard: skip if any billing transaction already exists for this negotiation
+    // Keep the legacy all-types guard for monthly_cycle and subscription. The
+    // per_transaction branch below performs its own atomic, owner-validated
+    // claim so it can safely distinguish existing historical rows.
     const existingTx = await storage.getBillingTransactionsByDesmanche(desmancheId);
     const alreadyBilled = existingTx.some((t: any) => t.negotiationId === negotiationId);
-    if (alreadyBilled) {
+    let billing = await storage.getDesmancheBilling(desmancheId);
+
+    if (alreadyBilled && (!billing || billing.billingModel !== "per_transaction")) {
       console.log(`[billing] Skipping duplicate charge for negotiation ${negotiationId}`);
       return;
     }
-
-    let billing = await storage.getDesmancheBilling(desmancheId);
 
     // Auto-create billing record with default monthly_cycle model if not set up yet
     if (!billing) {
@@ -3225,60 +3227,59 @@ export async function registerRoutes(app: Express) {
     if (billing.billingModel !== "per_transaction") return;
 
     const capAmount = await storage.getSystemSettingNumber("monthlyCapAmount", 350);
-
-    if (billing.monthlyAmountPaid >= capAmount) {
-      await storage.createBillingTransaction({
-        desmancheId,
-        negotiationId,
-        amount: 0,
-        type: "per_transaction",
-        description: "Isento — teto mensal atingido",
-        status: "exempt",
-      });
-      return;
-    }
-
-    const chargeAmount = Math.min(perTxAmount, capAmount - billing.monthlyAmountPaid);
-    let asaasChargeId: string | undefined;
-    let paymentLink: string | undefined;
-
-    if (asaas.isAsaasConfigured()) {
-      try {
-        const ensured = await ensureAsaasCustomerForDesmanche(desmancheId);
-        if (ensured.outcome === "ready") {
-          const charge = await asaas.createAsaasCharge({
-            customerId: ensured.customerId,
-            value: chargeAmount,
-            dueDate: asaas.getDueDateString(3),
-            description: `Central dos Desmanches — transação #${negotiationId.slice(0, 8)}`,
-            billingType: "UNDEFINED",
-          });
-          if (charge) {
-            asaasChargeId = charge.id;
-            paymentLink = charge.invoiceUrl || charge.bankSlipUrl;
-          }
-        } else {
-          console.warn(`[billing] Transaction billing customer state=${ensured.outcome}; recording locally without Asaas charge`);
-        }
-      } catch {
-        // The local pending transaction remains recoverable through the manual
-        // charge route even if the customer service has an unexpected failure.
-        console.warn("[billing] Transaction billing customer service unavailable; recording locally without Asaas charge");
-      }
-    }
-
-    const tx = await storage.createBillingTransaction({
+    const local = storage.createOrGetPerTransactionBilling({
       desmancheId,
       negotiationId,
-      amount: chargeAmount,
-      type: "per_transaction",
-      description: `Transação — negociação #${negotiationId.slice(0, 8)}`,
-      asaasChargeId,
-      paymentLink,
-      status: "pending",
+      perTransactionAmount: perTxAmount,
+      monthlyCapAmount: capAmount,
+      chargeDescription: `Transação — negociação #${negotiationId.slice(0, 8)}`,
+      exemptDescription: "Isento — teto mensal atingido",
     });
 
-    await storage.incrementBillingTransaction(desmancheId, chargeAmount);
+    if (local.outcome === "not_found") {
+      console.error("[billing] Per-transaction billing negotiation was not found");
+      return;
+    }
+    if (local.outcome === "conflict") {
+      console.error("[billing] Per-transaction billing integrity conflict");
+      return;
+    }
+    if (local.outcome === "existing") {
+      // Existing rows can predate external references/intents. They are only
+      // recoverable via the explicit manual route, never by an automatic retry.
+      console.log("[billing] Reused existing per-transaction billing record");
+      return local.transaction;
+    }
+
+    const tx = local.transaction;
+    if (tx.status === "exempt") {
+      console.log("[billing] Created exempt per-transaction billing record");
+      return tx;
+    }
+    if (!asaas.isAsaasConfigured()) {
+      console.log("[billing] Created pending per-transaction billing record while Asaas is unavailable");
+      return tx;
+    }
+
+    try {
+      const payment = await ensureAsaasPaymentForBillingTransaction(tx.id, desmancheId);
+      if (payment.outcome === "ready") {
+        console.log("[billing] Per-transaction payment is ready");
+      } else if (payment.outcome === "busy") {
+        console.log("[billing] Per-transaction payment is already processing");
+      } else if (payment.outcome === "ambiguous") {
+        console.warn("[billing] Per-transaction payment requires reconciliation");
+      } else if (payment.outcome === "failed") {
+        console.warn("[billing] Per-transaction payment could not be created");
+      } else if (payment.outcome === "conflict") {
+        console.error("[billing] Per-transaction payment integrity conflict");
+      } else {
+        console.error("[billing] Per-transaction payment record was not found");
+      }
+    } catch {
+      // Billing is deliberately non-critical for review, moderation and expiry.
+      console.error("[billing] Per-transaction payment service failed unexpectedly");
+    }
     return tx;
   }
 
