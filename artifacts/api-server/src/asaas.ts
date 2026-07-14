@@ -158,8 +158,77 @@ export async function createAsaasCharge(data: {
   billingType: "BOLETO" | "PIX" | "UNDEFINED";
   externalReference?: string;
 }): Promise<{ id: string; invoiceUrl?: string; bankSlipUrl?: string; status: string } | null> {
+  const result = await createAsaasChargeDetailed(data);
+  if (!result.ok) return null;
+  return {
+    id: result.payment.id,
+    ...(result.payment.invoiceUrl === undefined ? {} : { invoiceUrl: result.payment.invoiceUrl }),
+    ...(result.payment.bankSlipUrl === undefined ? {} : { bankSlipUrl: result.payment.bankSlipUrl }),
+    status: result.payment.status ?? "",
+  };
+}
+
+export type CreateAsaasChargeDetailedResult =
+  | {
+    ok: true;
+    payment: {
+      id: string;
+      customer?: string;
+      value?: number;
+      dueDate?: string;
+      billingType?: string;
+      status?: string;
+      externalReference?: string;
+      invoiceUrl?: string;
+      bankSlipUrl?: string;
+    };
+  }
+  | {
+    ok: false;
+    errorType: "timeout" | "network" | "http" | "invalid_response";
+    statusCode?: number;
+    errorCode?: string;
+  };
+
+function parseAsaasPayment(value: unknown, requireComparableFields: boolean): AsaasPaymentListItem | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Record<string, unknown>;
+  const externalReference = optionalString(item.externalReference);
+  const customer = optionalString(item.customer);
+  const dueDate = optionalString(item.dueDate);
+  const billingType = optionalString(item.billingType);
+  const status = optionalString(item.status);
+  const invoiceUrl = optionalString(item.invoiceUrl);
+  const bankSlipUrl = optionalString(item.bankSlipUrl);
+  const amount = optionalNumber(item.value);
+  if (typeof item.id !== "string" || item.id.length === 0
+    || externalReference === null || customer === null || dueDate === null || billingType === null
+    || status === null || invoiceUrl === null || bankSlipUrl === null || amount === null) return null;
+  if (requireComparableFields && (externalReference === undefined || customer === undefined || dueDate === undefined || billingType === undefined || amount === undefined)) return null;
+  return {
+    id: item.id,
+    ...(externalReference === undefined ? {} : { externalReference }),
+    ...(customer === undefined ? {} : { customer }),
+    ...(amount === undefined ? {} : { value: amount }),
+    ...(dueDate === undefined ? {} : { dueDate }),
+    ...(billingType === undefined ? {} : { billingType }),
+    ...(status === undefined ? {} : { status }),
+    ...(invoiceUrl === undefined ? {} : { invoiceUrl }),
+    ...(bankSlipUrl === undefined ? {} : { bankSlipUrl }),
+  };
+}
+
+/** Creates one payment without retrying and keeps transport failures distinct. */
+export async function createAsaasChargeDetailed(data: {
+  customerId: string;
+  value: number;
+  dueDate: string;
+  description: string;
+  billingType: "BOLETO" | "PIX" | "UNDEFINED";
+  externalReference?: string;
+}): Promise<CreateAsaasChargeDetailedResult> {
   if (data.externalReference !== undefined) assertAsaasExternalReference(data.externalReference);
-  if (!isAsaasConfigured()) return null;
+  if (!isAsaasConfigured()) return { ok: false, errorType: "network", errorCode: "ASAAS_NOT_CONFIGURED" };
   try {
     const res = await asaasFetch("create charge", "/payments", 12_000, {
       method: "POST",
@@ -173,11 +242,20 @@ export async function createAsaasCharge(data: {
       }),
     });
     if (!res.ok) {
-      return null;
+      return {
+        ok: false,
+        errorType: "http",
+        statusCode: res.status,
+        ...(res.status >= 400 && res.status < 500 ? { errorCode: "ASAAS_PAYMENT_VALIDATION" } : {}),
+      };
     }
-    return (await res.json()) as { id: string; invoiceUrl?: string; bankSlipUrl?: string; status: string };
-  } catch {
-    return null;
+    let raw: unknown;
+    try { raw = await res.json(); } catch { return { ok: false, errorType: "invalid_response" }; }
+    const payment = parseAsaasPayment(raw, false);
+    if (!payment) return { ok: false, errorType: "invalid_response" };
+    return { ok: true, payment };
+  } catch (error) {
+    return { ok: false, errorType: isTimeoutError(error) ? "timeout" : "network" };
   }
 }
 
@@ -203,7 +281,7 @@ export type AsaasListSuccess<T> = { ok: true; data: T[] };
 export type AsaasListResult<T> = AsaasListSuccess<T> | AsaasListFailure;
 export type AsaasCustomerListItem = { id: string; externalReference?: string };
 export type AsaasPaymentListItem = {
-  id: string; externalReference?: string; customer?: string; value?: number; dueDate?: string; status?: string;
+  id: string; externalReference?: string; customer?: string; value?: number; dueDate?: string; billingType?: string; status?: string; invoiceUrl?: string; bankSlipUrl?: string;
 };
 export type AsaasSubscriptionListItem = {
   id: string; externalReference?: string; customer?: string; value?: number; nextDueDate?: string; cycle?: string; status?: string;
@@ -251,15 +329,7 @@ function parseCustomerListItem(value: unknown): AsaasCustomerListItem | null {
 }
 
 function parsePaymentListItem(value: unknown): AsaasPaymentListItem | null {
-  if (!value || typeof value !== "object") return null;
-  const item = value as Record<string, unknown>;
-  const externalReference = optionalString(item.externalReference);
-  const customer = optionalString(item.customer);
-  const dueDate = optionalString(item.dueDate);
-  const status = optionalString(item.status);
-  const amount = optionalNumber(item.value);
-  if (typeof item.id !== "string" || item.id.length === 0 || externalReference === null || customer === null || dueDate === null || status === null || amount === null) return null;
-  return { id: item.id, ...(externalReference === undefined ? {} : { externalReference }), ...(customer === undefined ? {} : { customer }), ...(amount === undefined ? {} : { value: amount }), ...(dueDate === undefined ? {} : { dueDate }), ...(status === undefined ? {} : { status }) };
+  return parseAsaasPayment(value, false);
 }
 
 function parseSubscriptionListItem(value: unknown): AsaasSubscriptionListItem | null {

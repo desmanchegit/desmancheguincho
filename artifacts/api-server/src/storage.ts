@@ -13,6 +13,7 @@ import {
   initializeAsaasCreationIntentSchema,
 } from "./asaas-intents";
 import { createAsaasCustomerLinkStore } from "./asaas-customer-links";
+import { createAsaasPaymentLinkStore } from "./asaas-payment-links";
 
 mkdirSync(path.dirname(databasePath), { recursive: true });
 const sqlite = new Database(databasePath);
@@ -269,6 +270,7 @@ sqlite.exec(`
     status TEXT NOT NULL DEFAULT 'pending',
     type TEXT NOT NULL DEFAULT 'monthly_cycle',
     asaas_charge_id TEXT,
+    asaas_due_date TEXT,
     payment_link TEXT,
     description TEXT,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
@@ -332,10 +334,17 @@ sqlite.exec(`
 // Migrations para colunas adicionadas após a criação inicial das tabelas
 const migrations = [
   `ALTER TABLE users ADD COLUMN whatsapp_contact_preference TEXT NOT NULL DEFAULT 'whatsapp'`,
+  `ALTER TABLE billing_transactions ADD COLUMN asaas_due_date TEXT`,
 ];
 for (const migration of migrations) {
   try { sqlite.exec(migration); } catch {}
 }
+
+const asaasPaymentLinkStore = createAsaasPaymentLinkStore(sqlite);
+export const getBillingTransactionForAsaasPayment = asaasPaymentLinkStore.getBillingTransactionForAsaasPayment;
+export const persistOrReuseAsaasDueDate = asaasPaymentLinkStore.persistOrReuseAsaasDueDate;
+export const associateAsaasCreationIntentToBillingTransaction = asaasPaymentLinkStore.associateAsaasCreationIntent;
+export const completeAsaasPaymentForBillingTransaction = asaasPaymentLinkStore.completeAsaasPayment;
 
 // ── Migrate: add permissions column to users ──
 try {

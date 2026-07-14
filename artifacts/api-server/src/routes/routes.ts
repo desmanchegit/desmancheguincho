@@ -11,6 +11,7 @@ import {
   ensureAsaasCustomerForDesmanche,
   ensureAsaasCustomerForGuincho,
 } from "../asaas-customer-service-runtime";
+import { ensureAsaasPaymentForBillingTransaction } from "../asaas-payment-service-runtime";
 import type { EnsureAsaasCustomerResult } from "../asaas-customer-service";
 import * as email from "../email";
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
@@ -2923,33 +2924,16 @@ export async function registerRoutes(app: Express) {
       if (tx.status !== "pending") return res.status(400).json({ message: "Transação não está pendente" });
       // Monthly-cycle transactions are consolidated into a single charge at cycle close — cannot be charged individually
       if (tx.type === "monthly_cycle") return res.status(400).json({ message: "Transações do ciclo mensal são faturadas automaticamente no fechamento do ciclo. Não é possível gerar cobrança individual." });
-      if (tx.asaasChargeId) return res.status(400).json({ message: "Cobrança já existe no Asaas" });
+      if (tx.asaasChargeId) return res.json({ asaasChargeId: tx.asaasChargeId, ...(tx.paymentLink ? { paymentLink: tx.paymentLink } : {}) });
       if (!asaas.isAsaasConfigured()) return res.status(400).json({ message: "Asaas não configurado" });
 
-      let billing = await storage.getDesmancheBilling(desmancheId);
-      if (!billing) return res.status(404).json({ message: "Dados de cobrança não encontrados" });
-
-      const ensured = await ensureAsaasCustomerForDesmanche(desmancheId);
-      if (ensured.outcome !== "ready") return sendAsaasCustomerOutcome(res, ensured);
-      // The local link was atomically persisted by the service; reuse its exact id.
-      billing = await storage.getDesmancheBilling(desmancheId);
-      if (!billing?.asaasCustomerId || billing.asaasCustomerId !== ensured.customerId) {
-        return res.status(409).json({ message: "Conflito ao confirmar o cadastro de cobrança." });
-      }
-
-      const charge = await asaas.createAsaasCharge({
-        customerId: billing!.asaasCustomerId!,
-        value: tx.amount,
-        dueDate: asaas.getDueDateString(3),
-        description: tx.description || `Central dos Desmanches — transação #${txId.slice(0, 8)}`,
-        billingType: "UNDEFINED",
-      });
-      if (!charge) return res.status(502).json({ message: "Erro ao criar cobrança no Asaas" });
-
-      const paymentLink = charge.invoiceUrl || charge.bankSlipUrl;
-      await storage.updateBillingTransactionStatus(txId, "pending", charge.id, paymentLink);
-
-      res.json({ asaasChargeId: charge.id, paymentLink });
+      const result = await ensureAsaasPaymentForBillingTransaction(txId, desmancheId);
+      if (result.outcome === "ready") return res.json({ asaasChargeId: result.paymentId, paymentLink: result.paymentLink });
+      if (result.outcome === "busy") return res.status(409).json({ message: "A cobrança está em processamento." });
+      if (result.outcome === "ambiguous") return res.status(503).json({ message: "Não foi possível confirmar a cobrança. Tente novamente mais tarde." });
+      if (result.outcome === "failed") return res.status(422).json({ message: "Não foi possível criar a cobrança." });
+      if (result.outcome === "not_found") return res.status(404).json({ message: "Transação não encontrada" });
+      return res.status(409).json({ message: "Conflito ao confirmar a cobrança." });
     } catch (error) {
       console.error("Retry charge error:", error);
       res.status(500).json({ message: "Erro ao gerar cobrança" });

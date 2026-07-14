@@ -88,6 +88,7 @@ export const billingTransactions = sqliteTable("billing_transactions", {
   type: text("type", { enum: ["per_transaction", "subscription", "monthly_cycle"] }).notNull().default("monthly_cycle"),
   asaasChargeId: text("asaas_charge_id"),
   asaasCreationIntentId: text("asaas_creation_intent_id"),
+  asaasDueDate: text("asaas_due_date"),
   paymentLink: text("payment_link"),
   description: text("description"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),

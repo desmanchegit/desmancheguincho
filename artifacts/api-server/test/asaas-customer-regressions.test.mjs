@@ -116,6 +116,19 @@ function customerHash(entityType, entityId, externalReference) {
   return hashAsaasCreationParameters({ resourceType: "customer", entityType, entityId, operationKey: "customer", externalReference });
 }
 
+function paymentReference(transactionId) {
+  return `cdd:p:bt:${transactionId}`;
+}
+
+function paymentHash(transactionId, dueDate = "2030-01-03") {
+  const externalReference = paymentReference(transactionId);
+  return hashAsaasCreationParameters({
+    resourceType: "payment", entityType: "billing_transaction", entityId: transactionId,
+    operationKey: "charge", externalReference, customerId: "cus_manual", amountCents: 2500,
+    dueDate, billingType: "UNDEFINED",
+  });
+}
+
 let desmancheSequence = 0;
 function insertDesmanche(sqlite, id) {
   sqlite.prepare("INSERT INTO desmanches (id, company_name, trading_name, cnpj, email, phone, password) VALUES (?, ?, ?, ?, ?, ?, ?)")
@@ -128,6 +141,19 @@ function insertCustomerIntent(sqlite, { entityType = "desmanche", entityId, exte
     asaas_resource_id, parameter_hash, lease_owner, lease_expires_at, last_error_code, created_at, updated_at
   ) VALUES (?, 'customer', ?, ?, 'customer', ?, ?, NULL, ?, ?, ?, NULL, 1, 1)`).run(
     `intent-${entityId}`, entityType, entityId, externalReference, status, parameterHash, leaseOwner, status === "creating" ? 4_000_000_000 : null,
+  );
+}
+
+function insertPaymentIntent(sqlite, { transactionId, status, leaseOwner = "other" }) {
+  const intentId = `intent-payment-${transactionId}`;
+  const hasLease = status === "creating";
+  sqlite.prepare("UPDATE billing_transactions SET asaas_due_date = '2030-01-03', asaas_creation_intent_id = ? WHERE id = ?").run(intentId, transactionId);
+  sqlite.prepare(`INSERT INTO asaas_creation_intents (
+    intent_id, resource_type, entity_type, entity_id, operation_key, external_reference, status,
+    asaas_resource_id, parameter_hash, lease_owner, lease_expires_at, last_error_code, created_at, updated_at
+  ) VALUES (?, 'payment', 'billing_transaction', ?, 'charge', ?, ?, NULL, ?, ?, ?, NULL, 1, 1)`).run(
+    intentId, transactionId, paymentReference(transactionId), status, paymentHash(transactionId),
+    hasLease ? leaseOwner : null, hasLease ? 4_000_000_000 : null,
   );
 }
 
@@ -273,4 +299,110 @@ test("cadastro de guincho persiste planos anual e mensal quando o cliente fica a
     { email: "monthly@guincho.example.test", plan: "monthly", asaas_customer_id: null, asaas_payment_id: null, asaas_subscription_id: null, status: "pending" },
   ]);
   assert.deepEqual(calls, { payments: 0, subscriptions: 0 });
+});
+
+test("rota manual de cobrança cria uma vez, repete localmente e mantém seus bloqueios", async (t) => {
+  const calls = { payments: 0 };
+  const { endpoint, filename } = await startServer(t, (req, res) => {
+    const url = new URL(req.url, "http://local");
+    if (url.pathname === "/payments" && req.method === "GET") {
+      res.setHeader("content-type", "application/json");
+      return res.end(JSON.stringify({ data: [], hasMore: false }));
+    }
+    if (url.pathname === "/payments" && req.method === "POST") {
+      calls.payments++;
+      res.setHeader("content-type", "application/json");
+      return res.end(JSON.stringify({ id: "pay_manual" }));
+    }
+    res.writeHead(404); res.end();
+  });
+  const sqlite = new Database(filename); t.after(() => sqlite.close());
+  insertDesmanche(sqlite, "manual-owner");
+  insertDesmanche(sqlite, "manual-other");
+  sqlite.prepare("INSERT INTO desmanche_billing (id, desmanche_id, billing_model, asaas_customer_id) VALUES ('billing-manual', 'manual-owner', 'per_transaction', 'cus_manual')").run();
+  sqlite.prepare("INSERT INTO billing_transactions (id, desmanche_id, amount, status, type) VALUES ('manual-tx', 'manual-owner', 25, 'pending', 'per_transaction')").run();
+  sqlite.prepare("INSERT INTO billing_transactions (id, desmanche_id, amount, status, type) VALUES ('manual-monthly', 'manual-owner', 25, 'pending', 'monthly_cycle')").run();
+  sqlite.prepare("INSERT INTO billing_transactions (id, desmanche_id, amount, status, type) VALUES ('manual-paid', 'manual-owner', 25, 'paid', 'per_transaction')").run();
+
+  const request = (id, owner = "manual-owner") => fetch(`${endpoint}/api/billing/transactions/${id}/charge`, {
+    method: "POST", headers: { authorization: `Bearer ${token(owner, "desmanche")}` },
+  });
+  const first = await request("manual-tx");
+  assert.equal(first.status, 200); assert.deepEqual(await first.json(), { asaasChargeId: "pay_manual" });
+  const repeated = await request("manual-tx");
+  assert.equal(repeated.status, 200); assert.equal(calls.payments, 1);
+  assert.equal((await request("manual-tx", "manual-other")).status, 404);
+  assert.equal((await request("manual-monthly")).status, 400);
+  assert.equal((await request("manual-paid")).status, 400);
+  const persisted = sqlite.prepare("SELECT asaas_charge_id, asaas_due_date, asaas_creation_intent_id FROM billing_transactions WHERE id = 'manual-tx'").get();
+  assert.equal(persisted.asaas_charge_id, "pay_manual");
+  assert.match(persisted.asaas_due_date, /^\d{4}-\d{2}-\d{2}$/); assert.ok(persisted.asaas_creation_intent_id);
+});
+
+test("rota manual mapeia estados idempotentes para respostas genéricas sem expor detalhes", async (t) => {
+  const calls = { get: 0, post: 0 };
+  const { endpoint, filename } = await startServer(t, (req, res) => {
+    const url = new URL(req.url, "http://local");
+    if (url.pathname === "/payments" && req.method === "GET") {
+      calls.get++;
+      const reference = url.searchParams.get("externalReference");
+      if (reference === paymentReference("route-ambiguous")) { res.writeHead(500); return res.end(); }
+      if (reference === paymentReference("route-ready")) {
+        res.setHeader("content-type", "application/json");
+        return res.end(JSON.stringify({ data: [{
+          id: "pay_reconciled", customer: "cus_manual", value: 25, dueDate: "2030-01-03",
+          billingType: "UNDEFINED", externalReference: reference,
+        }], hasMore: false }));
+      }
+      res.setHeader("content-type", "application/json");
+      return res.end(JSON.stringify({ data: [], hasMore: false }));
+    }
+    if (url.pathname === "/payments" && req.method === "POST") {
+      calls.post++;
+      res.writeHead(400, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ issues: [{ description: "dados internos do Asaas" }] }));
+    }
+    res.writeHead(404); res.end();
+  });
+  const sqlite = new Database(filename); t.after(() => sqlite.close());
+  insertDesmanche(sqlite, "manual-owner");
+  sqlite.prepare("INSERT INTO desmanche_billing (id, desmanche_id, billing_model, asaas_customer_id) VALUES ('billing-manual', 'manual-owner', 'per_transaction', 'cus_manual')").run();
+  for (const id of ["route-busy", "route-ambiguous", "route-failed", "route-conflict", "route-ready"]) {
+    sqlite.prepare("INSERT INTO billing_transactions (id, desmanche_id, amount, status, type) VALUES (?, 'manual-owner', 25, 'pending', 'per_transaction')").run(id);
+  }
+  insertPaymentIntent(sqlite, { transactionId: "route-busy", status: "creating" });
+  insertPaymentIntent(sqlite, { transactionId: "route-ambiguous", status: "ambiguous" });
+  insertPaymentIntent(sqlite, { transactionId: "route-failed", status: "failed" });
+  sqlite.prepare("UPDATE billing_transactions SET asaas_due_date = '2030-01-03', asaas_creation_intent_id = 'foreign-intent' WHERE id = 'route-conflict'").run();
+  sqlite.prepare("UPDATE billing_transactions SET asaas_due_date = '2030-01-03' WHERE id = 'route-ready'").run();
+
+  const request = (id) => fetch(`${endpoint}/api/billing/transactions/${id}/charge`, {
+    method: "POST", headers: { authorization: `Bearer ${token("manual-owner", "desmanche")}` },
+  });
+  const assertError = async (response, status) => {
+    assert.equal(response.status, status);
+    const body = await response.json();
+    assert.deepEqual(Object.keys(body), ["message"]);
+    assert.equal(typeof body.message, "string");
+    assert.doesNotMatch(JSON.stringify(body), /REMOTE_|PAYMENT_|intent|asaas|dados internos/i);
+  };
+
+  await assertError(await request("route-busy"), 409);
+  assert.equal(calls.post, 0);
+  await assertError(await request("route-ambiguous"), 503);
+  assert.equal(calls.post, 0);
+  await assertError(await request("route-failed"), 422);
+  assert.equal(calls.post, 1);
+  await assertError(await request("route-conflict"), 409);
+  await assertError(await request("route-missing"), 404);
+
+  const reconciled = await request("route-ready");
+  assert.equal(reconciled.status, 200);
+  assert.deepEqual(await reconciled.json(), { asaasChargeId: "pay_reconciled" });
+  assert.equal(calls.post, 1);
+  const networkCallsBeforeRetry = { ...calls };
+  const repeated = await request("route-ready");
+  assert.equal(repeated.status, 200);
+  assert.deepEqual(await repeated.json(), { asaasChargeId: "pay_reconciled" });
+  assert.deepEqual(calls, networkCallsBeforeRetry);
 });

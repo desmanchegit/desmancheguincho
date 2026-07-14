@@ -22,6 +22,8 @@ async function buildAll() {
       path.resolve(artifactDir, "src/asaas-intents.ts"),
       path.resolve(artifactDir, "src/asaas-customer-links.ts"),
       path.resolve(artifactDir, "src/asaas-customer-service.ts"),
+      path.resolve(artifactDir, "src/asaas-payment-service.ts"),
+      path.resolve(artifactDir, "src/asaas-payment-links.ts"),
       path.resolve(artifactDir, "src/migrations/guinchos.ts"),
     ],
     platform: "node",
