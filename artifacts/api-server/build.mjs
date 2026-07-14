@@ -17,6 +17,7 @@ async function buildAll() {
   await esbuild({
     entryPoints: [
       path.resolve(artifactDir, "src/index.ts"),
+      path.resolve(artifactDir, "src/asaas.ts"),
       path.resolve(artifactDir, "src/migrations/guinchos.ts"),
     ],
     platform: "node",
