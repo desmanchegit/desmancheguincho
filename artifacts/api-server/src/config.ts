@@ -57,9 +57,11 @@ export const databasePath = configuredDatabasePath || defaultDatabasePath;
 export const asaasWebhookToken = configuredAsaasWebhookToken;
 export const uploadsDir = configuredUploadsDir?.trim() || defaultUploadsDir;
 export const publicUploadsDir = path.join(uploadsDir, "public");
+export const guinchoPhotosDir = path.join(publicUploadsDir, "guincho-photos");
 export const privateUploadsDir = path.join(uploadsDir, "private");
 export const privateDocumentsDir = path.join(privateUploadsDir, "documents");
 
 fs.mkdirSync(publicUploadsDir, { recursive: true });
+fs.mkdirSync(guinchoPhotosDir, { recursive: true });
 fs.mkdirSync(privateUploadsDir, { recursive: true });
 fs.mkdirSync(privateDocumentsDir, { recursive: true });

@@ -10,7 +10,7 @@ import * as asaas from "../asaas";
 import * as email from "../email";
 import { randomBytes, timingSafeEqual } from "crypto";
 import bcrypt from "bcryptjs";
-import { asaasWebhookToken, jwtSecret, privateDocumentsDir, publicUploadsDir } from "../config";
+import { asaasWebhookToken, guinchoPhotosDir, jwtSecret, privateDocumentsDir, publicUploadsDir } from "../config";
 
 const uploadStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, publicUploadsDir),
@@ -31,6 +31,34 @@ const upload = multer({
     } else {
       cb(new Error('Tipo de arquivo não permitido. Use PDF, JPG, PNG ou WebP.'));
     }
+  },
+});
+
+const guinchoPhotoMimeTypesByExtension: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+};
+
+const guinchoPhotoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, guinchoPhotosDir),
+  filename: (_req, file, cb) => {
+    const extension = path.extname(file.originalname).toLowerCase();
+    cb(null, randomBytes(32).toString("hex") + extension);
+  },
+});
+
+const guinchoPhotoUpload = multer({
+  storage: guinchoPhotoStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const extension = path.extname(file.originalname).toLowerCase();
+    if (guinchoPhotoMimeTypesByExtension[extension] !== file.mimetype) {
+      cb(new Error("Tipo de foto não permitido. Use JPG, PNG ou WebP."));
+      return;
+    }
+    cb(null, true);
   },
 });
 
@@ -102,6 +130,35 @@ function hasAllowedDocumentSignature(filePath: string): boolean {
   if (extension === ".jpg" || extension === ".jpeg") return header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
   if (extension === ".png") return header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
   return extension === ".webp" && header.subarray(0, 4).toString() === "RIFF" && header.subarray(8, 12).toString() === "WEBP";
+}
+
+function hasAllowedGuinchoPhotoSignature(filePath: string): boolean {
+  const header = Buffer.alloc(12);
+  const descriptor = fs.openSync(filePath, "r");
+  try { fs.readSync(descriptor, header, 0, header.length, 0); } finally { fs.closeSync(descriptor); }
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === ".jpg" || extension === ".jpeg") return header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
+  if (extension === ".png") return header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  return extension === ".webp" && header.subarray(0, 4).toString() === "RIFF" && header.subarray(8, 12).toString() === "WEBP";
+}
+
+function removeUploadedGuinchoPhoto(file?: Express.Multer.File) {
+  if (!file?.path) return;
+  try {
+    fs.unlinkSync(file.path);
+  } catch (error: any) {
+    if (error?.code !== "ENOENT") console.error("Could not remove guincho photo after failed request:", error);
+  }
+}
+
+function localGuinchoPhotoPath(photoUrl: unknown): string | null {
+  if (typeof photoUrl !== "string" || !photoUrl.startsWith("/uploads/guincho-photos/")) return null;
+  const filename = photoUrl.slice("/uploads/guincho-photos/".length);
+  if (!filename || filename !== path.basename(filename) || filename.includes("..")) return null;
+  const resolved = path.resolve(guinchoPhotosDir, filename);
+  const relative = path.relative(guinchoPhotosDir, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return resolved;
 }
 
 function removeUploadedDocument(file?: Express.Multer.File) {
@@ -3547,12 +3604,61 @@ export async function registerRoutes(app: Express) {
     }
   });
 
+  // Guincho: replace my public profile photo with a locally persisted image.
+  app.post("/api/guinchos/me/photo", authMiddleware, requireType(["guincho"]), (req, res, next) => {
+    guinchoPhotoUpload.single("photo")(req, res, (err) => {
+      if (err instanceof multer.MulterError) return res.status(400).json({ message: "Erro no upload" });
+      if (err) return res.status(400).json({ message: err.message });
+      next();
+    });
+  }, async (req, res) => {
+    const file = req.file;
+    if (!file) return res.status(400).json({ message: "Nenhuma foto enviada" });
+
+    try {
+      if (!hasAllowedGuinchoPhotoSignature(file.path)) {
+        removeUploadedGuinchoPhoto(file);
+        return res.status(400).json({ message: "Arquivo de imagem inválido" });
+      }
+
+      const guinchoId = (req as any).user.id;
+      const current = storage.getGuinchoById(guinchoId);
+      if (!current) {
+        removeUploadedGuinchoPhoto(file);
+        return res.status(404).json({ message: "Não encontrado" });
+      }
+
+      const photoUrl = "/uploads/guincho-photos/" + file.filename;
+      const updated = await storage.updateGuinchoProfile(guinchoId, { photoUrl });
+      if (!updated) {
+        removeUploadedGuinchoPhoto(file);
+        return res.status(404).json({ message: "Não encontrado" });
+      }
+
+      const previousPath = localGuinchoPhotoPath(current.photo_url);
+      if (previousPath) {
+        try {
+          fs.unlinkSync(previousPath);
+        } catch (error: any) {
+          if (error?.code !== "ENOENT") console.error("Could not remove replaced guincho photo:", error);
+        }
+      }
+
+      res.json({ photoUrl });
+    } catch (error) {
+      removeUploadedGuinchoPhoto(file);
+      console.error("Update guincho photo error:", error);
+      res.status(500).json({ message: "Erro ao atualizar foto" });
+    }
+  });
+
   // Guincho: update my profile (including address)
   app.patch("/api/guinchos/me", authMiddleware, requireType(["guincho"]), async (req, res) => {
     try {
       const id = (req as any).user.id;
-      const { name, tradingName, phone, whatsapp, description, serviceRadius, zipCode, street, number, neighborhood, city, state, photoUrl } = req.body;
-      const updated = await storage.updateGuinchoProfile(id, { name, tradingName, phone, whatsapp, description, serviceRadius, zipCode, street, number, neighborhood, city, state, photoUrl });
+      const { name, tradingName, phone, whatsapp, description, serviceRadius, zipCode, street, number, neighborhood, city, state } = req.body;
+      // Profile photos are deliberately handled only by POST /api/guinchos/me/photo.
+      const updated = await storage.updateGuinchoProfile(id, { name, tradingName, phone, whatsapp, description, serviceRadius, zipCode, street, number, neighborhood, city, state });
       if (!updated) return res.status(404).json({ message: "Não encontrado" });
       res.json({
         id: updated.id,

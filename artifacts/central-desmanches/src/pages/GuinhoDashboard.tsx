@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { useUpload } from "@workspace/object-storage-web";
 import { Truck, LogOut, User, Clock, CheckCircle2, XCircle, Loader2, Save, Phone, MapPin, AlertCircle, Camera } from "lucide-react";
 import logoImg from "@assets/Design_sem_nome_(23)_1772229532951.png";
 
@@ -178,9 +177,7 @@ function ProfileTab({ user, onUpdate }: { user: GuinchoUser; onUpdate: (u: Guinc
   const [isLoading, setIsLoading] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { uploadFile, isUploading } = useUpload({
-    onError: (err) => toast({ title: err.message || "Erro ao enviar foto", variant: "destructive" }),
-  });
+  const [isPhotoUploading, setIsPhotoUploading] = useState(false);
   const [form, setForm] = useState({
     tradingName: user.tradingName,
     phone: user.phone,
@@ -200,18 +197,36 @@ function ProfileTab({ user, onUpdate }: { user: GuinchoUser; onUpdate: (u: Guinc
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const result = await uploadFile(file);
-    if (!result) return;
-    const photoUrl = `/api/storage${result.objectPath}`;
+    const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+    if (!allowedTypes.has(file.type)) {
+      toast({ title: "Tipo de arquivo não permitido", description: "Use JPEG, PNG ou WebP.", variant: "destructive" });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "Arquivo muito grande", description: "A foto deve ter no máximo 5 MiB.", variant: "destructive" });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    setIsPhotoUploading(true);
     try {
-      const res = await guinchoRequest("PATCH", "/api/guinchos/me", { photoUrl });
+      const token = getGuinchoToken();
+      const formData = new FormData();
+      formData.append("photo", file);
+      const res = await fetch("/api/guinchos/me/photo", {
+        method: "POST",
+        headers: token ? { Authorization: "Bearer " + token } : undefined,
+        body: formData,
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
-      onUpdate({ ...user, ...data });
+      onUpdate({ ...user, photoUrl: data.photoUrl });
       toast({ title: "Foto atualizada!" });
     } catch (err: any) {
       toast({ title: err.message || "Erro ao salvar foto", variant: "destructive" });
     } finally {
+      setIsPhotoUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
@@ -278,7 +293,7 @@ function ProfileTab({ user, onUpdate }: { user: GuinchoUser; onUpdate: (u: Guinc
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp"
               className="hidden"
               onChange={handlePhotoChange}
             />
@@ -286,12 +301,12 @@ function ProfileTab({ user, onUpdate }: { user: GuinchoUser; onUpdate: (u: Guinc
               type="button"
               variant="outline"
               size="sm"
-              disabled={isUploading}
+              disabled={isPhotoUploading}
               onClick={() => fileInputRef.current?.click()}
             >
-              {isUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enviando...</> : <><Camera className="mr-2 h-4 w-4" />Enviar Foto</>}
+              {isPhotoUploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enviando...</> : <><Camera className="mr-2 h-4 w-4" />Enviar Foto</>}
             </Button>
-            <p className="text-xs text-muted-foreground">Aparece no catálogo público. JPG ou PNG.</p>
+            <p className="text-xs text-muted-foreground">Aparece no catálogo público. JPEG, PNG ou WebP — máx. 5 MiB.</p>
           </div>
         </div>
       </div>
