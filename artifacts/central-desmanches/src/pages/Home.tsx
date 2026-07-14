@@ -203,7 +203,7 @@ export default function Home() {
               ao Mesmo Tempo.
             </h1>
             
-            <p className="text-xl text-muted-foreground mb-8 max-w-2xl leading-relaxed">
+            <p className="text-xl text-slate-300 mb-8 max-w-2xl leading-relaxed">
               Carros, motos e veículos pesados. Faça um único pedido e receba propostas de toda a rede de desmanches credenciados. Rápido, seguro e direto.
             </p>
             
