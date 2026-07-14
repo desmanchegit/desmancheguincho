@@ -16,7 +16,9 @@ import {
 import {
   createAsaasCharge,
   createAsaasCustomer,
+  createAsaasCustomerDetailed,
   createAsaasSubscription,
+  listAsaasCustomersByCpfCnpj,
   listAsaasCustomersByExternalReference,
   listAsaasPaymentsByExternalReference,
   listAsaasSubscriptionsByExternalReference,
@@ -250,4 +252,37 @@ test("GETs Asaas paginam, classificam falhas e POSTs mantêm compatibilidade", a
   const beforeInvalid = seen.length;
   await assert.rejects(() => createAsaasCharge({ customerId: "cus_1", value: 10, dueDate: "2030-01-01", description: "Test", billingType: "PIX", externalReference: "bad ref" }), /whitespace/);
   assert.equal(seen.length, beforeInvalid);
+});
+
+test("consulta de clientes por CPF/CNPJ usa somente query normalizada e pagina", async (t) => {
+  const seen = [];
+  const baseUrl = await startServer(t, (req, res) => {
+    const url = new URL(req.url, "http://local");
+    seen.push(url);
+    assert.equal(url.pathname, "/customers");
+    assert.equal(url.searchParams.get("externalReference"), null);
+    assert.equal(url.searchParams.get("cpfCnpj"), "00000000000");
+    const offset = Number(url.searchParams.get("offset"));
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(offset === 0
+      ? { data: [{ id: "cus_doc_1" }], hasMore: true }
+      : { data: [{ id: "cus_doc_2" }], hasMore: false }));
+  });
+  t.after(() => setAsaasBaseUrlForTests(undefined));
+  setAsaasConfig("test-key", "sandbox");
+  setAsaasBaseUrlForTests(baseUrl);
+  assert.deepEqual(await listAsaasCustomersByCpfCnpj("000.000.000-00", { limit: 1 }), { ok: true, data: [{ id: "cus_doc_1" }, { id: "cus_doc_2" }] });
+  assert.equal(seen.length, 2);
+});
+
+test("POST detalhado classifica resposta sem retornar payload do provedor", async (t) => {
+  const baseUrl = await startServer(t, async (req, res) => {
+    await readBody(req);
+    res.writeHead(400, { "content-type": "application/json" });
+    res.end(JSON.stringify({ issues: [{ description: "dado privado" }] }));
+  });
+  t.after(() => setAsaasBaseUrlForTests(undefined));
+  setAsaasConfig("test-key", "sandbox");
+  setAsaasBaseUrlForTests(baseUrl);
+  assert.deepEqual(await createAsaasCustomerDetailed({ name: "Teste", email: "test@example.test", phone: "11999999999", cpfCnpj: "00000000000", externalReference: "cdd:c:d:test-id" }), { ok: false, errorType: "http", statusCode: 400, errorCode: "ASAAS_CUSTOMER_VALIDATION" });
 });

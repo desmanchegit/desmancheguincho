@@ -12,6 +12,7 @@ import {
   createAsaasCreationIntentStore,
   initializeAsaasCreationIntentSchema,
 } from "./asaas-intents";
+import { createAsaasCustomerLinkStore } from "./asaas-customer-links";
 
 mkdirSync(path.dirname(databasePath), { recursive: true });
 const sqlite = new Database(databasePath);
@@ -2548,6 +2549,12 @@ for (const stmt of [
 // The rebuild, validation, and index creation preserve the existing foreign_keys state.
 migrateGuinchos(sqlite);
 
+// Must be initialized after the guinchos structural migration, because these
+// finalizers prepare statements for both local entity tables.
+const asaasCustomerLinkStore = createAsaasCustomerLinkStore(sqlite);
+export const completeAsaasCustomerForDesmanche = asaasCustomerLinkStore.completeDesmanche;
+export const completeAsaasCustomerForGuincho = asaasCustomerLinkStore.completeGuincho;
+
 export async function createGuincho(data: any): Promise<any> {
   const { password, ...rest } = data;
   const hashed = await bcrypt.hash(password, 10);
@@ -2557,14 +2564,14 @@ export async function createGuincho(data: any): Promise<any> {
     city: rest.city, state: rest.state, zipCode: rest.zipCode,
   });
   sqlite.prepare(`
-    INSERT INTO guinchos (id, name, trading_name, document_type, cnpj, cpf, antt, email, phone, whatsapp, password, description, zip_code, street, number, neighborhood, city, state, service_radius, photo_url, latitude, longitude)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO guinchos (id, name, trading_name, document_type, cnpj, cpf, antt, email, phone, whatsapp, password, description, zip_code, street, number, neighborhood, city, state, service_radius, photo_url, latitude, longitude, plan)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, rest.name, rest.tradingName, rest.documentType ?? "cnpj", rest.cnpj ?? null, rest.cpf ?? null, rest.antt ?? null,
     rest.email, rest.phone, rest.whatsapp,
     hashed, rest.description ?? null, rest.zipCode, rest.street, rest.number ?? null,
     rest.neighborhood ?? null, rest.city, rest.state, rest.serviceRadius ?? 50,
-    rest.photoUrl ?? null, coords?.latitude ?? null, coords?.longitude ?? null
+    rest.photoUrl ?? null, coords?.latitude ?? null, coords?.longitude ?? null, rest.plan ?? "annual"
   );
   return getGuinchoById(id);
 }
@@ -2655,7 +2662,7 @@ export function updateGuinchoAsaasFull(id: string, opts: {
   plan?: "annual" | "monthly";
 }): void {
   sqlite.prepare(
-    "UPDATE guinchos SET asaas_customer_id = ?, asaas_payment_id = ?, asaas_subscription_id = ?, plan = COALESCE(?, plan) WHERE id = ?"
+    "UPDATE guinchos SET asaas_customer_id = ?, asaas_payment_id = COALESCE(?, asaas_payment_id), asaas_subscription_id = COALESCE(?, asaas_subscription_id), plan = COALESCE(?, plan) WHERE id = ?"
   ).run(opts.asaasCustomerId, opts.asaasPaymentId ?? null, opts.asaasSubscriptionId ?? null, opts.plan ?? null, id);
 }
 

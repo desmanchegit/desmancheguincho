@@ -6,6 +6,11 @@ let _baseUrlForTests: string | undefined;
 
 function getBaseUrl() {
   if (_baseUrlForTests) return _baseUrlForTests;
+  // Integration tests run the real HTTP client against an ephemeral local
+  // server. This override is intentionally unavailable outside NODE_ENV=test.
+  if (process.env.NODE_ENV === "test" && process.env.ASAAS_BASE_URL_FOR_TESTS) {
+    return process.env.ASAAS_BASE_URL_FOR_TESTS;
+  }
   return _environment === "production"
     ? "https://api.asaas.com/v3"
     : "https://sandbox.asaas.com/api/v3";
@@ -89,6 +94,59 @@ export async function createAsaasCustomer(data: {
     return (await res.json()) as { id: string };
   } catch {
     return null;
+  }
+}
+
+export type CreateAsaasCustomerDetailedResult =
+  | { ok: true; customer: { id: string } }
+  | {
+    ok: false;
+    errorType: "timeout" | "network" | "http" | "invalid_response";
+    statusCode?: number;
+    errorCode?: string;
+  };
+
+/**
+ * Creates one customer without retrying and keeps transport failures distinct.
+ * It deliberately never includes the provider's response body in its result.
+ */
+export async function createAsaasCustomerDetailed(data: {
+  name: string;
+  email: string;
+  phone: string;
+  cpfCnpj: string;
+  externalReference?: string;
+}): Promise<CreateAsaasCustomerDetailedResult> {
+  if (data.externalReference !== undefined) assertAsaasExternalReference(data.externalReference);
+  if (!isAsaasConfigured()) return { ok: false, errorType: "network", errorCode: "ASAAS_NOT_CONFIGURED" };
+  try {
+    const res = await asaasFetch("create customer", "/customers", 12_000, {
+      method: "POST",
+      body: JSON.stringify({
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
+        cpfCnpj: data.cpfCnpj.replace(/\D/g, ""),
+        ...(data.externalReference === undefined ? {} : { externalReference: data.externalReference }),
+      }),
+    });
+    if (!res.ok) {
+      // Consume no provider payload: it can contain data supplied by the customer.
+      return {
+        ok: false,
+        errorType: "http",
+        statusCode: res.status,
+        ...(res.status >= 400 && res.status < 500 ? { errorCode: "ASAAS_CUSTOMER_VALIDATION" } : {}),
+      };
+    }
+    let raw: unknown;
+    try { raw = await res.json(); } catch { return { ok: false, errorType: "invalid_response" }; }
+    if (!raw || typeof raw !== "object" || typeof (raw as { id?: unknown }).id !== "string" || !(raw as { id: string }).id) {
+      return { ok: false, errorType: "invalid_response" };
+    }
+    return { ok: true, customer: { id: (raw as { id: string }).id } };
+  } catch (error) {
+    return { ok: false, errorType: isTimeoutError(error) ? "timeout" : "network" };
   }
 }
 
@@ -250,11 +308,40 @@ async function listAsaasByExternalReference<T>(
   return { ok: false, errorType: "invalid_response" };
 }
 
+async function listAsaasCustomersByQuery(queryBase: Record<string, string>, options: AsaasListOptions): Promise<AsaasListResult<AsaasCustomerListItem>> {
+  const { limit, offset } = validateListOptions(options);
+  if (!isAsaasConfigured()) return { ok: false, errorType: "network" };
+  const all: AsaasCustomerListItem[] = [];
+  for (let pageNumber = 0; pageNumber < 50; pageNumber += 1) {
+    const query = new URLSearchParams({ ...queryBase, limit: String(limit), offset: String(offset + pageNumber * limit) });
+    let response: Response;
+    try { response = await asaasFetch("list customers", "/customers?" + query.toString(), 8_000); }
+    catch (error) { return { ok: false, errorType: isTimeoutError(error) ? "timeout" : "network" }; }
+    if (!response.ok) return { ok: false, errorType: "http", statusCode: response.status };
+    let raw: unknown;
+    try { raw = await response.json(); } catch { return { ok: false, errorType: "invalid_response" }; }
+    const parsed = parseListPage(raw, parseCustomerListItem);
+    if (!parsed) return { ok: false, errorType: "invalid_response" };
+    all.push(...parsed.data);
+    if (!parsed.hasMore) return { ok: true, data: all };
+  }
+  return { ok: false, errorType: "invalid_response" };
+}
+
 export function listAsaasCustomersByExternalReference(
   externalReference: string,
   options: AsaasListOptions & { cpfCnpj?: string } = {},
 ): Promise<AsaasListResult<AsaasCustomerListItem>> {
   return listAsaasByExternalReference("list customers", "/customers", externalReference, options, { cpfCnpj: options.cpfCnpj }, parseCustomerListItem);
+}
+
+/** Lists all customer pages by document. The document is used only in the URL query. */
+export function listAsaasCustomersByCpfCnpj(
+  cpfCnpj: string, options: AsaasListOptions = {},
+): Promise<AsaasListResult<AsaasCustomerListItem>> {
+  const normalized = cpfCnpj.replace(/\D/g, "");
+  if (!normalized) throw new Error("Asaas customer cpfCnpj must contain digits");
+  return listAsaasCustomersByQuery({ cpfCnpj: normalized }, options);
 }
 
 export function listAsaasPaymentsByExternalReference(

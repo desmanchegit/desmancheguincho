@@ -7,10 +7,27 @@ import fs from "fs";
 import * as storage from "../storage";
 import * as schema from "@workspace/db/schema";
 import * as asaas from "../asaas";
+import {
+  ensureAsaasCustomerForDesmanche,
+  ensureAsaasCustomerForGuincho,
+} from "../asaas-customer-service-runtime";
+import type { EnsureAsaasCustomerResult } from "../asaas-customer-service";
 import * as email from "../email";
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import bcrypt from "bcryptjs";
 import { asaasWebhookToken, guinchoPhotosDir, jwtSecret, privateDocumentsDir, publicUploadsDir } from "../config";
+
+function sendAsaasCustomerOutcome(res: Response, result: Exclude<EnsureAsaasCustomerResult, { outcome: "ready" }>): void {
+  if (result.outcome === "busy") {
+    res.status(409).json({ message: "O cadastro de cobrança está em processamento." });
+  } else if (result.outcome === "ambiguous") {
+    res.status(503).json({ message: "Não foi possível confirmar o cadastro de cobrança. Tente novamente mais tarde." });
+  } else if (result.outcome === "failed") {
+    res.status(422).json({ message: "Não foi possível cadastrar o cliente de cobrança." });
+  } else {
+    res.status(409).json({ message: "Conflito ao confirmar o cadastro de cobrança." });
+  }
+}
 
 const uploadStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, publicUploadsDir),
@@ -2786,22 +2803,30 @@ export async function registerRoutes(app: Express) {
       const desmanche = await storage.getDesmancheById(desmancheId);
       if (!desmanche) return res.status(404).json({ message: "Desmanche não encontrado" });
 
-      let asaasCustomerId: string | undefined;
-      if (asaas.isAsaasConfigured()) {
-        const customer = await asaas.createAsaasCustomer({
-          name: desmanche.companyName,
-          email: desmanche.email,
-          phone: desmanche.phone,
-          cpfCnpj: desmanche.cnpj,
-        });
-        if (customer && !("error" in customer)) asaasCustomerId = customer.id;
-      }
-
-      const billing = await storage.createOrUpdateDesmancheBilling(desmancheId, {
+      // Save the chosen local model first. Customer provisioning is deliberately
+      // separate so an interrupted/blocked Asaas step never invents a model.
+      await storage.createOrUpdateDesmancheBilling(desmancheId, {
         billingModel,
         planId: planId || null,
-        asaasCustomerId,
       });
+      if (asaas.isAsaasConfigured()) {
+        const ensured = await ensureAsaasCustomerForDesmanche(desmancheId);
+        if (ensured.outcome !== "ready") {
+          const billing = await storage.getDesmancheBilling(desmancheId);
+          return res.status(ensured.outcome === "ambiguous" ? 503 : ensured.outcome === "failed" ? 422 : 409).json({
+            message: ensured.outcome === "busy"
+              ? "O cadastro de cobrança está em processamento."
+              : ensured.outcome === "ambiguous"
+                ? "Não foi possível confirmar o cadastro de cobrança. Tente novamente mais tarde."
+                : ensured.outcome === "failed"
+                  ? "Não foi possível cadastrar o cliente de cobrança."
+                  : "Conflito ao confirmar o cadastro de cobrança.",
+            billing,
+            customerOutcome: ensured.outcome,
+          });
+        }
+      }
+      const billing = await storage.getDesmancheBilling(desmancheId);
       res.json(billing);
     } catch (error) {
       console.error("Billing setup error:", error);
@@ -2904,21 +2929,12 @@ export async function registerRoutes(app: Express) {
       let billing = await storage.getDesmancheBilling(desmancheId);
       if (!billing) return res.status(404).json({ message: "Dados de cobrança não encontrados" });
 
-      // Se não tem cliente Asaas, cria agora
-      if (!billing.asaasCustomerId) {
-        const desmanche = await storage.getDesmancheById(desmancheId);
-        if (!desmanche) return res.status(404).json({ message: "Desmanche não encontrado" });
-        const customer = await asaas.createAsaasCustomer({
-          name: desmanche.companyName,
-          email: desmanche.email,
-          phone: desmanche.phone,
-          cpfCnpj: desmanche.cnpj,
-        });
-        if (!customer) return res.status(502).json({ message: "Erro de conexão com o Asaas. Tente novamente." });
-        if ("error" in customer) {
-          return res.status(422).json({ message: `Asaas: ${customer.error}. Verifique o CNPJ no Perfil da Empresa.` });
-        }
-        billing = await storage.createOrUpdateDesmancheBilling(desmancheId, { asaasCustomerId: customer.id });
+      const ensured = await ensureAsaasCustomerForDesmanche(desmancheId);
+      if (ensured.outcome !== "ready") return sendAsaasCustomerOutcome(res, ensured);
+      // The local link was atomically persisted by the service; reuse its exact id.
+      billing = await storage.getDesmancheBilling(desmancheId);
+      if (!billing?.asaasCustomerId || billing.asaasCustomerId !== ensured.customerId) {
+        return res.status(409).json({ message: "Conflito ao confirmar o cadastro de cobrança." });
       }
 
       const charge = await asaas.createAsaasCharge({
@@ -3242,17 +3258,28 @@ export async function registerRoutes(app: Express) {
     let asaasChargeId: string | undefined;
     let paymentLink: string | undefined;
 
-    if (asaas.isAsaasConfigured() && billing.asaasCustomerId) {
-      const charge = await asaas.createAsaasCharge({
-        customerId: billing.asaasCustomerId,
-        value: chargeAmount,
-        dueDate: asaas.getDueDateString(3),
-        description: `Central dos Desmanches — transação #${negotiationId.slice(0, 8)}`,
-        billingType: "UNDEFINED",
-      });
-      if (charge) {
-        asaasChargeId = charge.id;
-        paymentLink = charge.invoiceUrl || charge.bankSlipUrl;
+    if (asaas.isAsaasConfigured()) {
+      try {
+        const ensured = await ensureAsaasCustomerForDesmanche(desmancheId);
+        if (ensured.outcome === "ready") {
+          const charge = await asaas.createAsaasCharge({
+            customerId: ensured.customerId,
+            value: chargeAmount,
+            dueDate: asaas.getDueDateString(3),
+            description: `Central dos Desmanches — transação #${negotiationId.slice(0, 8)}`,
+            billingType: "UNDEFINED",
+          });
+          if (charge) {
+            asaasChargeId = charge.id;
+            paymentLink = charge.invoiceUrl || charge.bankSlipUrl;
+          }
+        } else {
+          console.warn(`[billing] Transaction billing customer state=${ensured.outcome}; recording locally without Asaas charge`);
+        }
+      } catch {
+        // The local pending transaction remains recoverable through the manual
+        // charge route even if the customer service has an unexpected failure.
+        console.warn("[billing] Transaction billing customer service unavailable; recording locally without Asaas charge");
       }
     }
 
@@ -3295,28 +3322,12 @@ export async function registerRoutes(app: Express) {
             continue;
           }
 
-          // Auto-provision Asaas customer if missing
-          let asaasCustomerId = billingRecord.asaasCustomerId;
-          if (!asaasCustomerId) {
-            const desmanche = (billingRecord as any).desmanche;
-            if (!desmanche) {
-              console.warn(`[billing] Cycle close for ${desmancheId}: desmanche data missing, skipping`);
-              continue;
-            }
-            const customer = await asaas.createAsaasCustomer({
-              name: desmanche.companyName,
-              email: desmanche.email,
-              phone: desmanche.phone,
-              cpfCnpj: desmanche.cnpj,
-            });
-            if (!customer || "error" in customer) {
-              console.warn(`[billing] Cycle close for ${desmancheId}: failed to create Asaas customer (${(customer as any)?.error || "unknown"}), skipping`);
-              continue;
-            }
-            asaasCustomerId = customer.id;
-            await storage.createOrUpdateDesmancheBilling(desmancheId, { asaasCustomerId });
-            console.log(`[billing] Auto-provisioned Asaas customer for ${desmancheId}: ${asaasCustomerId}`);
+          const ensured = await ensureAsaasCustomerForDesmanche(desmancheId);
+          if (ensured.outcome !== "ready") {
+            console.warn(`[billing] Cycle close for ${desmancheId}: customer state=${ensured.outcome}, skipping`);
+            continue;
           }
+          const asaasCustomerId = ensured.customerId;
 
           const periodStart = new Date(Number(billingRecord.currentPeriodStart) * 1000);
           const periodEnd = new Date();
@@ -3472,7 +3483,9 @@ export async function registerRoutes(app: Express) {
           }
         }
       }
-      const guincho = await storage.createGuincho(data);
+      const plan: "annual" | "monthly" = req.body.plan === "monthly" ? "monthly" : "annual";
+      // Persist the requested commercial plan before any provider call.
+      const guincho = await storage.createGuincho({ ...data, plan });
       storage.logActivity({
         action: "guincho_registered",
         actorType: "system",
@@ -3482,21 +3495,24 @@ export async function registerRoutes(app: Express) {
       });
 
       // Create Asaas customer + charge (annual R$80) or subscription (monthly R$10)
-      const plan: "annual" | "monthly" = req.body.plan === "monthly" ? "monthly" : "annual";
       let paymentUrl: string | null = null;
+      let customerOutcome: Exclude<EnsureAsaasCustomerResult, { outcome: "ready" }> | null = null;
+      let customerServiceUnavailable = false;
       if (asaas.isAsaasConfigured()) {
+        let ensured: EnsureAsaasCustomerResult | null = null;
         try {
-          const cpfCnpj = data.documentType === "cpf" ? (data.cpf ?? "") : (data.cnpj ?? "");
-          const customer = await asaas.createAsaasCustomer({
-            name: guincho.name,
-            email: guincho.email,
-            phone: guincho.phone,
-            cpfCnpj,
-          });
-          if (customer && !("error" in customer)) {
+          ensured = await ensureAsaasCustomerForGuincho(guincho.id);
+        } catch {
+          // The registration and requested plan are already local. Do not expose
+          // an internal customer-service error as financial completion.
+          customerServiceUnavailable = true;
+          req.log.error("Asaas customer service unavailable during guincho registration");
+        }
+        if (ensured?.outcome === "ready") {
+          try {
             if (plan === "monthly") {
               const subscription = await asaas.createAsaasSubscription({
-                customerId: customer.id,
+                customerId: ensured.customerId,
                 value: 10,
                 nextDueDate: asaas.getDueDateString(3),
                 description: "Assinatura Mensal Central dos Desmanches — Guincho",
@@ -3505,7 +3521,7 @@ export async function registerRoutes(app: Express) {
               });
               if (subscription) {
                 storage.updateGuinchoAsaasFull(guincho.id, {
-                  asaasCustomerId: customer.id,
+                  asaasCustomerId: ensured.customerId,
                   asaasSubscriptionId: subscription.id,
                   plan: "monthly",
                 });
@@ -3513,7 +3529,7 @@ export async function registerRoutes(app: Express) {
               }
             } else {
               const charge = await asaas.createAsaasCharge({
-                customerId: customer.id,
+                customerId: ensured.customerId,
                 value: 80,
                 dueDate: asaas.getDueDateString(3),
                 description: "Anuidade Central dos Desmanches — Guincho",
@@ -3521,16 +3537,20 @@ export async function registerRoutes(app: Express) {
               });
               if (charge) {
                 storage.updateGuinchoAsaasFull(guincho.id, {
-                  asaasCustomerId: customer.id,
+                  asaasCustomerId: ensured.customerId,
                   asaasPaymentId: charge.id,
                   plan: "annual",
                 });
                 paymentUrl = charge.invoiceUrl ?? null;
               }
             }
+          } catch {
+            // Payment/subscription creation is a later concern. Registration and
+            // the local customer link must remain successful when it fails.
+            req.log.error("Asaas billing creation failed during guincho registration");
           }
-        } catch (err) {
-          req.log.error({ err }, "Failed to create Asaas charge for guincho");
+        } else if (ensured) {
+          customerOutcome = ensured;
         }
       }
 
@@ -3539,9 +3559,10 @@ export async function registerRoutes(app: Express) {
         jwtSecret,
         { expiresIn: "7d" }
       );
-      res.status(201).json({
+      res.status(customerOutcome || customerServiceUnavailable ? 202 : 201).json({
         token,
         paymentUrl,
+        ...(customerOutcome || customerServiceUnavailable ? { billing: "processing" } : {}),
         user: {
           id: guincho.id,
           name: guincho.trading_name,
