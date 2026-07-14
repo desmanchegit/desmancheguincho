@@ -8,6 +8,10 @@ import path from "path";
 import { mkdirSync } from "fs";
 import { databasePath } from "./config";
 import { migrateGuinchos } from "./migrations/guinchos";
+import {
+  createAsaasCreationIntentStore,
+  initializeAsaasCreationIntentSchema,
+} from "./asaas-intents";
 
 mkdirSync(path.dirname(databasePath), { recursive: true });
 const sqlite = new Database(databasePath);
@@ -292,6 +296,17 @@ sqlite.exec(`
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
   );
 `);
+
+// Estrutura aditiva para idempotência de criações Asaas. Nenhum fluxo de
+// negócio a utiliza nesta etapa; apenas expomos operações para a integração futura.
+initializeAsaasCreationIntentSchema(sqlite);
+const asaasCreationIntentStore = createAsaasCreationIntentStore(sqlite);
+export const createOrGetAsaasCreationIntent = asaasCreationIntentStore.createOrGetAsaasCreationIntent;
+export const getAsaasCreationIntent = asaasCreationIntentStore.getAsaasCreationIntent;
+export const claimAsaasCreationIntent = asaasCreationIntentStore.claimAsaasCreationIntent;
+export const markAsaasCreationIntentCreated = asaasCreationIntentStore.markAsaasCreationIntentCreated;
+export const markAsaasCreationIntentAmbiguous = asaasCreationIntentStore.markAsaasCreationIntentAmbiguous;
+export const markAsaasCreationIntentFailed = asaasCreationIntentStore.markAsaasCreationIntentFailed;
 
 // Eventos de webhook são guardados somente com metadados mínimos e um hash.
 // A criação é aditiva para bancos já existentes.

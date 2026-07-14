@@ -87,10 +87,30 @@ export const billingTransactions = sqliteTable("billing_transactions", {
   status: text("status", { enum: ["pending", "paid", "failed", "exempt", "billed"] }).notNull().default("pending"),
   type: text("type", { enum: ["per_transaction", "subscription", "monthly_cycle"] }).notNull().default("monthly_cycle"),
   asaasChargeId: text("asaas_charge_id"),
+  asaasCreationIntentId: text("asaas_creation_intent_id"),
   paymentLink: text("payment_link"),
   description: text("description"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
   paidAt: integer("paid_at", { mode: "timestamp" }),
+});
+
+// Intenções locais para criação idempotente de recursos no Asaas. O schema SQL
+// efetivo, incluindo CHECKs e índices, é aplicado pelo runtime do API server.
+export const asaasCreationIntents = sqliteTable("asaas_creation_intents", {
+  intentId: text("intent_id").primaryKey(),
+  resourceType: text("resource_type", { enum: ["customer", "payment", "subscription"] }).notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  operationKey: text("operation_key").notNull(),
+  externalReference: text("external_reference").notNull().unique(),
+  status: text("status", { enum: ["pending", "creating", "created", "ambiguous", "failed"] }).notNull(),
+  asaasResourceId: text("asaas_resource_id"),
+  parameterHash: text("parameter_hash").notNull(),
+  leaseOwner: text("lease_owner"),
+  leaseExpiresAt: integer("lease_expires_at"),
+  lastErrorCode: text("last_error_code"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 });
 
 // Eventos recebidos do webhook Asaas. O payload integral não é persistido.

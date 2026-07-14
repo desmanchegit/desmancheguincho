@@ -1,3 +1,5 @@
+import { assertAsaasExternalReference } from "./asaas-idempotency";
+
 let _apiKey: string = process.env.ASAAS_API_KEY || "";
 let _environment: string = process.env.ASAAS_ENVIRONMENT || "sandbox";
 let _baseUrlForTests: string | undefined;
@@ -34,7 +36,14 @@ export function getAsaasEnvironment(): string {
   return _environment;
 }
 
-type AsaasOperation = "create customer" | "create charge" | "get charge" | "create subscription";
+type AsaasOperation =
+  | "create customer"
+  | "create charge"
+  | "get charge"
+  | "create subscription"
+  | "list customers"
+  | "list payments"
+  | "list subscriptions";
 
 function isTimeoutError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "TimeoutError";
@@ -57,7 +66,9 @@ export async function createAsaasCustomer(data: {
   email: string;
   phone: string;
   cpfCnpj: string;
+  externalReference?: string;
 }): Promise<{ id: string } | { error: string } | null> {
+  if (data.externalReference !== undefined) assertAsaasExternalReference(data.externalReference);
   if (!isAsaasConfigured()) return null;
   try {
     const res = await asaasFetch("create customer", "/customers", 12_000, {
@@ -67,6 +78,7 @@ export async function createAsaasCustomer(data: {
         email: data.email,
         phone: data.phone,
         cpfCnpj: data.cpfCnpj.replace(/\D/g, ""),
+        ...(data.externalReference === undefined ? {} : { externalReference: data.externalReference }),
       }),
     });
     if (!res.ok) {
@@ -86,7 +98,9 @@ export async function createAsaasCharge(data: {
   dueDate: string;
   description: string;
   billingType: "BOLETO" | "PIX" | "UNDEFINED";
+  externalReference?: string;
 }): Promise<{ id: string; invoiceUrl?: string; bankSlipUrl?: string; status: string } | null> {
+  if (data.externalReference !== undefined) assertAsaasExternalReference(data.externalReference);
   if (!isAsaasConfigured()) return null;
   try {
     const res = await asaasFetch("create charge", "/payments", 12_000, {
@@ -97,6 +111,7 @@ export async function createAsaasCharge(data: {
         value: data.value,
         dueDate: data.dueDate,
         description: data.description,
+        ...(data.externalReference === undefined ? {} : { externalReference: data.externalReference }),
       }),
     });
     if (!res.ok) {
@@ -120,6 +135,140 @@ export async function getAsaasChargeStatus(chargeId: string): Promise<string | n
   }
 }
 
+export type AsaasListFailure = {
+  ok: false;
+  errorType: "timeout" | "network" | "http" | "invalid_response";
+  statusCode?: number;
+};
+
+export type AsaasListSuccess<T> = { ok: true; data: T[] };
+export type AsaasListResult<T> = AsaasListSuccess<T> | AsaasListFailure;
+export type AsaasCustomerListItem = { id: string; externalReference?: string };
+export type AsaasPaymentListItem = {
+  id: string; externalReference?: string; customer?: string; value?: number; dueDate?: string; status?: string;
+};
+export type AsaasSubscriptionListItem = {
+  id: string; externalReference?: string; customer?: string; value?: number; nextDueDate?: string; cycle?: string; status?: string;
+};
+
+type AsaasListOptions = { limit?: number; offset?: number };
+type AsaasListPage<T> = { data: T[]; hasMore: boolean };
+
+function validateListOptions(options: AsaasListOptions): Required<AsaasListOptions> {
+  const limit = options.limit ?? 100;
+  const offset = options.offset ?? 0;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Asaas list limit must be between 1 and 100");
+  if (!Number.isInteger(offset) || offset < 0) throw new Error("Asaas list offset must be a non-negative integer");
+  return { limit, offset };
+}
+
+function optionalString(value: unknown): string | undefined | null {
+  return value === undefined || typeof value === "string" ? value : null;
+}
+
+function optionalNumber(value: unknown): number | undefined | null {
+  return value === undefined || (typeof value === "number" && Number.isFinite(value)) ? value : null;
+}
+
+function parseListPage<T>(raw: unknown, parseItem: (value: unknown) => T | null): AsaasListPage<T> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const page = raw as { data?: unknown; hasMore?: unknown };
+  if (!Array.isArray(page.data) || typeof page.hasMore !== "boolean") return null;
+  const data: T[] = [];
+  for (const item of page.data) {
+    const parsed = parseItem(item);
+    if (!parsed) return null;
+    data.push(parsed);
+  }
+  if (page.hasMore && data.length === 0) return null;
+  return { data, hasMore: page.hasMore };
+}
+
+function parseCustomerListItem(value: unknown): AsaasCustomerListItem | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Record<string, unknown>;
+  const externalReference = optionalString(item.externalReference);
+  if (typeof item.id !== "string" || item.id.length === 0 || externalReference === null) return null;
+  return externalReference === undefined ? { id: item.id } : { id: item.id, externalReference };
+}
+
+function parsePaymentListItem(value: unknown): AsaasPaymentListItem | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Record<string, unknown>;
+  const externalReference = optionalString(item.externalReference);
+  const customer = optionalString(item.customer);
+  const dueDate = optionalString(item.dueDate);
+  const status = optionalString(item.status);
+  const amount = optionalNumber(item.value);
+  if (typeof item.id !== "string" || item.id.length === 0 || externalReference === null || customer === null || dueDate === null || status === null || amount === null) return null;
+  return { id: item.id, ...(externalReference === undefined ? {} : { externalReference }), ...(customer === undefined ? {} : { customer }), ...(amount === undefined ? {} : { value: amount }), ...(dueDate === undefined ? {} : { dueDate }), ...(status === undefined ? {} : { status }) };
+}
+
+function parseSubscriptionListItem(value: unknown): AsaasSubscriptionListItem | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Record<string, unknown>;
+  const externalReference = optionalString(item.externalReference);
+  const customer = optionalString(item.customer);
+  const nextDueDate = optionalString(item.nextDueDate);
+  const cycle = optionalString(item.cycle);
+  const status = optionalString(item.status);
+  const amount = optionalNumber(item.value);
+  if (typeof item.id !== "string" || item.id.length === 0 || externalReference === null || customer === null || nextDueDate === null || cycle === null || status === null || amount === null) return null;
+  return { id: item.id, ...(externalReference === undefined ? {} : { externalReference }), ...(customer === undefined ? {} : { customer }), ...(amount === undefined ? {} : { value: amount }), ...(nextDueDate === undefined ? {} : { nextDueDate }), ...(cycle === undefined ? {} : { cycle }), ...(status === undefined ? {} : { status }) };
+}
+
+async function listAsaasByExternalReference<T>(
+  operation: AsaasOperation,
+  path: string,
+  externalReference: string,
+  options: AsaasListOptions,
+  extraQuery: Record<string, string | undefined>,
+  parseItem: (value: unknown) => T | null,
+): Promise<AsaasListResult<T>> {
+  assertAsaasExternalReference(externalReference);
+  const { limit, offset } = validateListOptions(options);
+  if (!isAsaasConfigured()) return { ok: false, errorType: "network" };
+
+  const all: T[] = [];
+  for (let pageNumber = 0; pageNumber < 50; pageNumber += 1) {
+    const query = new URLSearchParams({ externalReference, limit: String(limit), offset: String(offset + pageNumber * limit) });
+    for (const [key, value] of Object.entries(extraQuery)) if (value !== undefined) query.set(key, value);
+    let response: Response;
+    try {
+      response = await asaasFetch(operation, path + "?" + query.toString(), 8_000);
+    } catch (error) {
+      return { ok: false, errorType: isTimeoutError(error) ? "timeout" : "network" };
+    }
+    if (!response.ok) return { ok: false, errorType: "http", statusCode: response.status };
+    let raw: unknown;
+    try { raw = await response.json(); } catch { return { ok: false, errorType: "invalid_response" }; }
+    const parsed = parseListPage(raw, parseItem);
+    if (!parsed) return { ok: false, errorType: "invalid_response" };
+    all.push(...parsed.data);
+    if (!parsed.hasMore) return { ok: true, data: all };
+  }
+  return { ok: false, errorType: "invalid_response" };
+}
+
+export function listAsaasCustomersByExternalReference(
+  externalReference: string,
+  options: AsaasListOptions & { cpfCnpj?: string } = {},
+): Promise<AsaasListResult<AsaasCustomerListItem>> {
+  return listAsaasByExternalReference("list customers", "/customers", externalReference, options, { cpfCnpj: options.cpfCnpj }, parseCustomerListItem);
+}
+
+export function listAsaasPaymentsByExternalReference(
+  externalReference: string, options: AsaasListOptions = {},
+): Promise<AsaasListResult<AsaasPaymentListItem>> {
+  return listAsaasByExternalReference("list payments", "/payments", externalReference, options, {}, parsePaymentListItem);
+}
+
+export function listAsaasSubscriptionsByExternalReference(
+  externalReference: string, options: AsaasListOptions = {},
+): Promise<AsaasListResult<AsaasSubscriptionListItem>> {
+  return listAsaasByExternalReference("list subscriptions", "/subscriptions", externalReference, options, {}, parseSubscriptionListItem);
+}
+
 export async function createAsaasSubscription(data: {
   customerId: string;
   value: number;
@@ -127,7 +276,9 @@ export async function createAsaasSubscription(data: {
   description: string;
   billingType: "BOLETO" | "PIX" | "UNDEFINED";
   cycle: "MONTHLY" | "YEARLY";
+  externalReference?: string;
 }): Promise<{ id: string; invoiceUrl?: string; status: string } | null> {
+  if (data.externalReference !== undefined) assertAsaasExternalReference(data.externalReference);
   if (!isAsaasConfigured()) return null;
   try {
     const res = await asaasFetch("create subscription", "/subscriptions", 12_000, {
@@ -139,6 +290,7 @@ export async function createAsaasSubscription(data: {
         nextDueDate: data.nextDueDate,
         description: data.description,
         cycle: data.cycle,
+        ...(data.externalReference === undefined ? {} : { externalReference: data.externalReference }),
       }),
     });
     if (!res.ok) {
