@@ -8,7 +8,7 @@ import * as storage from "../storage";
 import * as schema from "@workspace/db/schema";
 import * as asaas from "../asaas";
 import * as email from "../email";
-import { randomBytes, timingSafeEqual } from "crypto";
+import { createHash, randomBytes, timingSafeEqual } from "crypto";
 import bcrypt from "bcryptjs";
 import { asaasWebhookToken, guinchoPhotosDir, jwtSecret, privateDocumentsDir, publicUploadsDir } from "../config";
 
@@ -2829,30 +2829,57 @@ export async function registerRoutes(app: Express) {
       return res.status(401).json({ message: "Não autorizado" });
     }
 
-    try {
-      const { event, payment } = req.body;
-      if (event === "PAYMENT_RECEIVED" || event === "PAYMENT_CONFIRMED") {
-        if (payment?.id) {
-          // Update ALL transactions sharing this charge ID (consolidated monthly charges
-          // link multiple transactions to a single Asaas charge)
-          const allTx = await storage.getAllBillingTransactions();
-          const matching = allTx.filter((t: any) => t.asaasChargeId === payment.id);
-          for (const tx of matching) {
-            await storage.updateBillingTransactionStatus(tx.id, "paid");
-          }
-          if (matching.length > 0) {
-            req.log.info(`[webhook] Marked ${matching.length} transaction(s) as paid for charge ${payment.id}`);
-          }
+    const body = req.body as Record<string, unknown>;
+    const eventId = body?.id;
+    const event = body?.event;
+    const maxWebhookFieldLength = 255;
+    const validRequiredString = (value: unknown): value is string =>
+      typeof value === "string" && value.trim().length > 0 && value.length <= maxWebhookFieldLength;
+    const optionalWebhookString = (value: unknown): string | undefined =>
+      validRequiredString(value) ? value : undefined;
 
-          // Activate guincho if this charge matches a pending guincho registration fee
-          const guincho = storage.getGuinchoByAsaasPaymentId(payment.id);
-          if (guincho && guincho.status === "pending") {
-            storage.updateGuinchoStatus(guincho.id, "active");
-            req.log.info({ guinchoId: guincho.id }, "[webhook] Guincho activated after payment confirmed");
-          }
-        }
+    if (!validRequiredString(eventId)) {
+      return res.status(400).json({ message: "Evento inválido" });
+    }
+    if (!validRequiredString(event)) {
+      return res.status(400).json({ message: "Tipo de evento inválido" });
+    }
+
+    const payment = body?.payment && typeof body.payment === "object"
+      ? body.payment as Record<string, unknown>
+      : undefined;
+    const paymentId = optionalWebhookString(payment?.id);
+    const handledEvent = event === "PAYMENT_RECEIVED" || event === "PAYMENT_CONFIRMED";
+    if (handledEvent && !paymentId) {
+      return res.status(400).json({ message: "Pagamento inválido" });
+    }
+
+    const paymentStatus = optionalWebhookString(payment?.status);
+    const paymentCustomer = optionalWebhookString(payment?.customer);
+    const paymentSubscription = optionalWebhookString(payment?.subscription);
+    const paymentExternalReference = optionalWebhookString(payment?.externalReference);
+    const paymentForHash = payment ? {
+      ...(paymentId ? { id: paymentId } : {}),
+      ...(paymentStatus ? { status: paymentStatus } : {}),
+      ...(paymentCustomer ? { customer: paymentCustomer } : {}),
+      ...(paymentSubscription ? { subscription: paymentSubscription } : {}),
+      ...(paymentExternalReference ? { externalReference: paymentExternalReference } : {}),
+    } : undefined;
+    const payloadHash = createHash("sha256")
+      .update(JSON.stringify({ id: eventId, event, payment: paymentForHash }))
+      .digest("hex");
+
+    try {
+      const result = storage.processAsaasWebhookEvent({
+        eventId,
+        eventType: event,
+        paymentId,
+        payloadHash,
+      });
+      if (result.status === "duplicate") {
+        return res.status(200).json({ received: true, duplicate: true });
       }
-      res.json({ received: true });
+      res.status(200).json({ received: true });
     } catch (error) {
       console.error("Webhook error:", error);
       res.status(500).json({ message: "Erro no webhook" });

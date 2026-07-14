@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import path from "path";
 import { mkdirSync } from "fs";
 import { databasePath } from "./config";
+import { migrateGuinchos } from "./migrations/guinchos";
 
 mkdirSync(path.dirname(databasePath), { recursive: true });
 const sqlite = new Database(databasePath);
@@ -290,6 +291,26 @@ sqlite.exec(`
     admin_notes TEXT,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
   );
+`);
+
+// Eventos de webhook são guardados somente com metadados mínimos e um hash.
+// A criação é aditiva para bancos já existentes.
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS asaas_webhook_events (
+    event_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    payment_id TEXT,
+    payload_hash TEXT NOT NULL,
+    status TEXT NOT NULL,
+    received_at INTEGER NOT NULL,
+    processed_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_asaas_webhook_events_processed_at
+    ON asaas_webhook_events(processed_at);
+  CREATE INDEX IF NOT EXISTS idx_asaas_webhook_events_payment_id
+    ON asaas_webhook_events(payment_id);
+  CREATE INDEX IF NOT EXISTS idx_billing_transactions_asaas_charge_id
+    ON billing_transactions(asaas_charge_id);
 `);
 
 // Migrations para colunas adicionadas após a criação inicial das tabelas
@@ -1795,6 +1816,78 @@ export async function updateBillingTransactionStatus(id: string, status: "pendin
   await db.update(schema.billingTransactions).set(updateData).where(eq(schema.billingTransactions.id, id));
 }
 
+export type AsaasWebhookEventInput = {
+  eventId: string;
+  eventType: string;
+  paymentId?: string;
+  payloadHash: string;
+};
+
+export type AsaasWebhookProcessResult = {
+  status: "processed" | "ignored" | "duplicate";
+  payloadHashMismatch: boolean;
+};
+
+/**
+ * Atomically persists an Asaas event and applies its local effects. This is
+ * deliberately synchronous: better-sqlite3 transactions must not await.
+ */
+export function processAsaasWebhookEvent(
+  input: AsaasWebhookEventInput,
+): AsaasWebhookProcessResult {
+  const handledEvents = new Set(["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"]);
+
+  return sqlite.transaction((event: AsaasWebhookEventInput): AsaasWebhookProcessResult => {
+    const existing = sqlite.prepare(
+      "SELECT payload_hash FROM asaas_webhook_events WHERE event_id = ?",
+    ).get(event.eventId) as { payload_hash: string } | undefined;
+
+    if (existing) {
+      const payloadHashMismatch = existing.payload_hash !== event.payloadHash;
+      if (payloadHashMismatch) {
+        // Do not log the payload, token, payment data, or its hash.
+        console.error("[webhook] duplicate Asaas event with a different payload hash");
+      }
+      return { status: "duplicate", payloadHashMismatch };
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    if (!handledEvents.has(event.eventType)) {
+      sqlite.prepare(`
+        INSERT INTO asaas_webhook_events
+          (event_id, event_type, payment_id, payload_hash, status, received_at, processed_at)
+        VALUES (?, ?, ?, ?, 'ignored', ?, ?)
+      `).run(event.eventId, event.eventType, event.paymentId ?? null, event.payloadHash, now, now);
+      return { status: "ignored", payloadHashMismatch: false };
+    }
+
+    if (!event.paymentId) {
+      throw new Error("paymentId is required for handled Asaas webhook events");
+    }
+
+    sqlite.prepare(`
+      UPDATE billing_transactions
+      SET status = 'paid',
+          paid_at = CASE WHEN paid_at IS NULL THEN ? ELSE paid_at END
+      WHERE asaas_charge_id = ?
+    `).run(now, event.paymentId);
+
+    sqlite.prepare(`
+      UPDATE guinchos
+      SET status = 'active'
+      WHERE asaas_payment_id = ? AND status = 'pending'
+    `).run(event.paymentId);
+
+    sqlite.prepare(`
+      INSERT INTO asaas_webhook_events
+        (event_id, event_type, payment_id, payload_hash, status, received_at, processed_at)
+      VALUES (?, ?, ?, ?, 'processed', ?, ?)
+    `).run(event.eventId, event.eventType, event.paymentId, event.payloadHash, now, now);
+
+    return { status: "processed", payloadHashMismatch: false };
+  })(input);
+}
+
 // ==================== PROPOSAL LIMIT (subscription plans) ====================
 export async function getMonthlyProposalCountForDesmanche(desmancheId: string): Promise<number> {
   const now = new Date();
@@ -2409,11 +2502,17 @@ sqlite.exec(`
     longitude REAL,
     status TEXT NOT NULL DEFAULT 'pending',
     rejection_reason TEXT,
+    asaas_customer_id TEXT,
+    asaas_payment_id TEXT,
+    asaas_subscription_id TEXT,
+    plan TEXT NOT NULL DEFAULT 'annual',
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
   );
 `);
 
-// Idempotent migration for existing DBs created before document_type/cpf/antt existed
+// Idempotent migrations for columns added after the original guinchos table.
+// These must run before the legacy cnpj rebuild so its explicit INSERT can
+// preserve every current column.
 for (const stmt of [
   "ALTER TABLE guinchos ADD COLUMN document_type TEXT NOT NULL DEFAULT 'cnpj'",
   "ALTER TABLE guinchos ADD COLUMN cpf TEXT",
@@ -2421,51 +2520,18 @@ for (const stmt of [
   "ALTER TABLE guinchos ADD COLUMN photo_url TEXT",
   "ALTER TABLE guinchos ADD COLUMN latitude REAL",
   "ALTER TABLE guinchos ADD COLUMN longitude REAL",
+  "ALTER TABLE guinchos ADD COLUMN asaas_customer_id TEXT",
+  "ALTER TABLE guinchos ADD COLUMN asaas_payment_id TEXT",
+  "ALTER TABLE guinchos ADD COLUMN asaas_subscription_id TEXT",
+  "ALTER TABLE guinchos ADD COLUMN plan TEXT NOT NULL DEFAULT 'annual'",
 ]) {
   try { sqlite.exec(stmt); } catch { /* column already exists */ }
 }
 
 // SQLite can't drop a NOT NULL constraint via ALTER TABLE, so rebuild the table
 // if the legacy `cnpj NOT NULL` constraint is still present (needed for CPF-only guinchos).
-{
-  const cnpjCol = (sqlite.prepare("PRAGMA table_info(guinchos)").all() as any[]).find((c) => c.name === "cnpj");
-  if (cnpjCol && cnpjCol.notnull === 1) {
-    sqlite.exec(`
-      CREATE TABLE guinchos_new (
-        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-        name TEXT NOT NULL,
-        trading_name TEXT NOT NULL,
-        document_type TEXT NOT NULL DEFAULT 'cnpj',
-        cnpj TEXT UNIQUE,
-        cpf TEXT UNIQUE,
-        antt TEXT,
-        email TEXT NOT NULL UNIQUE,
-        phone TEXT NOT NULL,
-        whatsapp TEXT NOT NULL,
-        password TEXT NOT NULL,
-        description TEXT,
-        zip_code TEXT NOT NULL,
-        street TEXT NOT NULL,
-        number TEXT,
-        neighborhood TEXT,
-        city TEXT NOT NULL,
-        state TEXT NOT NULL,
-        service_radius INTEGER NOT NULL DEFAULT 50,
-        photo_url TEXT,
-        latitude REAL,
-        longitude REAL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        rejection_reason TEXT,
-        created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
-      );
-      INSERT INTO guinchos_new (id, name, trading_name, document_type, cnpj, cpf, antt, email, phone, whatsapp, password, description, zip_code, street, number, neighborhood, city, state, service_radius, status, rejection_reason, created_at)
-      SELECT id, name, trading_name, document_type, cnpj, cpf, antt, email, phone, whatsapp, password, description, zip_code, street, number, neighborhood, city, state, service_radius, status, rejection_reason, created_at
-      FROM guinchos;
-      DROP TABLE guinchos;
-      ALTER TABLE guinchos_new RENAME TO guinchos;
-    `);
-  }
-}
+// The rebuild, validation, and index creation preserve the existing foreign_keys state.
+migrateGuinchos(sqlite);
 
 export async function createGuincho(data: any): Promise<any> {
   const { password, ...rest } = data;

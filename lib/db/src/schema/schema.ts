@@ -93,6 +93,17 @@ export const billingTransactions = sqliteTable("billing_transactions", {
   paidAt: integer("paid_at", { mode: "timestamp" }),
 });
 
+// Eventos recebidos do webhook Asaas. O payload integral não é persistido.
+export const asaasWebhookEvents = sqliteTable("asaas_webhook_events", {
+  eventId: text("event_id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  paymentId: text("payment_id"),
+  payloadHash: text("payload_hash").notNull(),
+  status: text("status", { enum: ["processed", "ignored"] }).notNull(),
+  receivedAt: integer("received_at", { mode: "timestamp" }).notNull(),
+  processedAt: integer("processed_at", { mode: "timestamp" }).notNull(),
+});
+
 // Tabela de Configurações do Sistema
 export const systemSettings = sqliteTable("system_settings", {
   key: text("key").primaryKey(),
