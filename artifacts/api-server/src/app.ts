@@ -4,8 +4,10 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { registerRoutes } from "./routes/routes";
+import { globalLimiter, routeLimiters } from "./rate-limit";
 
 const app: Express = express();
+app.set("trust proxy", "loopback");
 const productionOrigins = new Set([
   "https://centraldosdesmanches.com.br",
   "https://www.centraldosdesmanches.com.br",
@@ -72,6 +74,12 @@ app.use(
 );
 app.use(express.json({ limit: "100kb" }));
 app.use(express.urlencoded({ extended: true, limit: "100kb", parameterLimit: 100 }));
+
+app.get("/healthz", (_req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+app.use(globalLimiter);
+app.use(routeLimiters);
 
 app.use("/api", router);
 
