@@ -75,7 +75,7 @@ export default function OverviewTab({ onNavigate }: { onNavigate?: (tab: string)
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold font-mono tracking-tight">Painel de Controle</h1>
-          <p className="text-muted-foreground">Acompanhe as métricas de negociações em tempo real.</p>
+          <p className="text-muted-foreground">Acompanhe aqui as negociações em tempo real.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => onNavigate?.('reports')}>Gerar Relatório</Button>
