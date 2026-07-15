@@ -268,8 +268,7 @@ export default function PrivacyPolicyModal({ open, onClose }: PrivacyPolicyModal
             ser enviadas para:{" "}
             <a href="mailto:contato@centraldosdesmanches.com.br" className="text-primary hover:underline">
               contato@centraldosdesmanches.com.br
-            </a>{" "}
-            ou pelo telefone <strong>(51) 9 8598-6668</strong>.
+            </a>.
           </Section>
 
           <div className="border-t pt-4 text-center text-xs text-muted-foreground">
