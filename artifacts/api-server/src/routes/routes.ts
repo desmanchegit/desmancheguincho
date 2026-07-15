@@ -3510,7 +3510,9 @@ export async function registerRoutes(app: Express) {
                   asaasSubscriptionId: subscription.id,
                   plan: "monthly",
                 });
-                paymentUrl = subscription.invoiceUrl ?? null;
+                // Subscriptions use `paymentLink`; `invoiceUrl` belongs to an
+                // individual charge and is only a fallback for legacy replies.
+                paymentUrl = subscription.paymentLink ?? subscription.invoiceUrl ?? null;
               }
             } else {
               const charge = await asaas.createAsaasCharge({
@@ -3526,7 +3528,7 @@ export async function registerRoutes(app: Express) {
                   asaasPaymentId: charge.id,
                   plan: "annual",
                 });
-                paymentUrl = charge.invoiceUrl ?? null;
+                paymentUrl = charge.invoiceUrl ?? charge.bankSlipUrl ?? null;
               }
             }
           } catch {

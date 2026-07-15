@@ -49,7 +49,7 @@ test("cliente Asaas usa timeouts, preserva contratos e nunca faz retry", async (
     }
     res.writeHead(200, { "content-type": "application/json" });
     if (req.url.startsWith("/payments/")) return res.end(JSON.stringify({ status: "PENDING" }));
-    return res.end(JSON.stringify({ id: "asaas_test", status: "PENDING", invoiceUrl: "http://local/invoice" }));
+    return res.end(JSON.stringify({ id: "asaas_test", status: "PENDING", paymentLink: "http://local/subscription-checkout", invoiceUrl: "http://local/invoice" }));
   });
   const originalTimeout = AbortSignal.timeout;
   const timeoutValues = [];
@@ -70,7 +70,12 @@ test("cliente Asaas usa timeouts, preserva contratos e nunca faz retry", async (
   };
   assert.equal((await createAsaasCustomer(customer)).id, "asaas_test");
   assert.equal((await createAsaasCharge(charge)).id, "asaas_test");
-  assert.equal((await createAsaasSubscription(subscription)).id, "asaas_test");
+  assert.deepEqual(await createAsaasSubscription(subscription), {
+    id: "asaas_test",
+    paymentLink: "http://local/subscription-checkout",
+    invoiceUrl: "http://local/invoice",
+    status: "PENDING",
+  });
   assert.equal(await getAsaasChargeStatus("pay_test"), "PENDING");
   assert.deepEqual(timeoutValues, [12000, 12000, 12000, 8000]);
   assert.ok(calls.every((call) => call.headers.access_token === "fake-asaas-key" && call.headers["content-type"] === "application/json"));

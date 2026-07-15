@@ -434,7 +434,7 @@ export async function createAsaasSubscription(data: {
   billingType: "BOLETO" | "PIX" | "UNDEFINED";
   cycle: "MONTHLY" | "YEARLY";
   externalReference?: string;
-}): Promise<{ id: string; invoiceUrl?: string; status: string } | null> {
+}): Promise<{ id: string; paymentLink?: string; invoiceUrl?: string; status: string } | null> {
   if (data.externalReference !== undefined) assertAsaasExternalReference(data.externalReference);
   if (!isAsaasConfigured()) return null;
   try {
@@ -453,7 +453,24 @@ export async function createAsaasSubscription(data: {
     if (!res.ok) {
       return null;
     }
-    return (await res.json()) as { id: string; invoiceUrl?: string; status: string };
+    const response = await res.json() as unknown;
+    if (!response || typeof response !== "object") return null;
+    const subscription = response as Record<string, unknown>;
+    if (typeof subscription.id !== "string" || !subscription.id) return null;
+
+    // The subscription API exposes the checkout URL as `paymentLink`.
+    // `invoiceUrl` is kept as a backwards-compatible fallback for older
+    // responses, but it is normally only present on individual payments.
+    return {
+      id: subscription.id,
+      ...(typeof subscription.paymentLink === "string" && subscription.paymentLink
+        ? { paymentLink: subscription.paymentLink }
+        : {}),
+      ...(typeof subscription.invoiceUrl === "string" && subscription.invoiceUrl
+        ? { invoiceUrl: subscription.invoiceUrl }
+        : {}),
+      status: typeof subscription.status === "string" ? subscription.status : "",
+    };
   } catch {
     return null;
   }
