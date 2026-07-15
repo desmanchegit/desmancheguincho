@@ -2686,6 +2686,57 @@ export function getGuinchoByAsaasPaymentId(paymentId: string): any | undefined {
   return sqlite.prepare("SELECT * FROM guinchos WHERE asaas_payment_id = ?").get(paymentId) as any;
 }
 
+export type DeleteGuinchoResult =
+  | { outcome: "deleted"; guincho: { id: string; tradingName: string; photoUrl: string | null } }
+  | { outcome: "not_found" }
+  | { outcome: "active" }
+  | { outcome: "billing_linked" };
+
+/**
+ * Removes only registrations that never became an active operational or
+ * billing relationship. The checks and deletion happen in one SQLite
+ * transaction so an approval or billing update cannot race the removal.
+ */
+export const deleteGuinchoIfUnlinked = sqlite.transaction((id: string): DeleteGuinchoResult => {
+  const guincho = sqlite.prepare(`
+    SELECT id, trading_name, photo_url, status, asaas_customer_id, asaas_payment_id, asaas_subscription_id
+    FROM guinchos
+    WHERE id = ?
+  `).get(id) as {
+    id: string;
+    trading_name: string;
+    photo_url: string | null;
+    status: string;
+    asaas_customer_id: string | null;
+    asaas_payment_id: string | null;
+    asaas_subscription_id: string | null;
+  } | undefined;
+
+  if (!guincho) return { outcome: "not_found" };
+  if (guincho.status === "active") return { outcome: "active" };
+
+  // A local Asaas identifier or a non-failed creation intent can represent an
+  // existing or indeterminate external charge. Keep the registration intact
+  // until that financial relationship is resolved.
+  const hasBillingLink = Boolean(
+    guincho.asaas_customer_id || guincho.asaas_payment_id || guincho.asaas_subscription_id,
+  ) || Boolean(sqlite.prepare(`
+    SELECT 1
+    FROM asaas_creation_intents
+    WHERE entity_type = 'guincho'
+      AND entity_id = ?
+      AND status <> 'failed'
+    LIMIT 1
+  `).get(id));
+  if (hasBillingLink) return { outcome: "billing_linked" };
+
+  sqlite.prepare("DELETE FROM guinchos WHERE id = ?").run(id);
+  return {
+    outcome: "deleted",
+    guincho: { id: guincho.id, tradingName: guincho.trading_name, photoUrl: guincho.photo_url },
+  };
+});
+
 export async function updateGuinchoProfile(id: string, data: {
   name?: string; tradingName?: string; phone?: string; whatsapp?: string; description?: string;
   serviceRadius?: number; zipCode?: string; street?: string; number?: string; neighborhood?: string; city?: string; state?: string;

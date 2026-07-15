@@ -6,7 +6,17 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Truck, Search, CheckCircle, XCircle, Clock, AlertCircle, MapPin, Phone, ChevronRight, RefreshCw
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Truck, Search, CheckCircle, XCircle, Clock, AlertCircle, MapPin, Phone, ChevronRight, RefreshCw, Trash2, Loader2
 } from "lucide-react";
 
 type Guincho = {
@@ -61,6 +71,7 @@ export default function GuinchosTab() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Guincho | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Guincho | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectInput, setShowRejectInput] = useState(false);
 
@@ -89,6 +100,26 @@ export default function GuinchosTab() {
     },
     onError: (err: any) => {
       toast({ title: err.message || "Erro ao atualizar", variant: "destructive" });
+    },
+  });
+
+  const deleteGuincho = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/admin/guinchos/${id}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "Erro ao excluir guincho");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/guinchos"] });
+      setDeleteTarget(null);
+      setSelected(null);
+      toast({ title: "Cadastro do guincho excluído" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Não foi possível excluir", description: err.message, variant: "destructive" });
     },
   });
 
@@ -229,8 +260,23 @@ export default function GuinchosTab() {
                 Reenviar para análise
               </Button>
             )}
+            {selected.status !== "active" && (
+              <Button
+                variant="outline"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setDeleteTarget(selected)}
+                disabled={updateStatus.isPending || deleteGuincho.isPending}
+                data-testid={`button-delete-guincho-${selected.id}`}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Excluir cadastro
+              </Button>
+            )}
           </div>
         </div>
+        <DeleteGuinchoDialog target={deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={() => {
+          if (deleteTarget) deleteGuincho.mutate(deleteTarget.id);
+        }} isDeleting={deleteGuincho.isPending} />
       </div>
     );
   }
@@ -321,5 +367,41 @@ export default function GuinchosTab() {
         </div>
       )}
     </div>
+  );
+}
+
+function DeleteGuinchoDialog({
+  target,
+  onClose,
+  onConfirm,
+  isDeleting,
+}: {
+  target: Guincho | null;
+  onClose: () => void;
+  onConfirm: () => void;
+  isDeleting: boolean;
+}) {
+  return (
+    <AlertDialog open={!!target} onOpenChange={(open) => !open && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Excluir cadastro de guincho?</AlertDialogTitle>
+          <AlertDialogDescription>
+            O cadastro de <strong>{target?.trading_name}</strong> será removido permanentemente. A exclusão só é permitida quando o guincho não está ativo e não possui cobrança ou assinatura vinculada.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={onConfirm}
+            disabled={isDeleting}
+          >
+            {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Excluir permanentemente
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

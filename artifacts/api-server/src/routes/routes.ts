@@ -3767,6 +3767,49 @@ export async function registerRoutes(app: Express) {
     }
   });
 
+  // Admin: permanently remove a test/unlinked guincho registration.
+  app.delete("/api/admin/guinchos/:id", authMiddleware, requireType(["admin"]), async (req, res) => {
+    try {
+      const { id } = req.params as { id: string };
+      const result = storage.deleteGuinchoIfUnlinked(id);
+      if (result.outcome === "not_found") {
+        return res.status(404).json({ message: "Guincho não encontrado" });
+      }
+      if (result.outcome === "active") {
+        return res.status(409).json({
+          message: "Não é possível excluir um guincho ativo. Desative-o primeiro e verifique se não há vínculos de cobrança.",
+        });
+      }
+      if (result.outcome === "billing_linked") {
+        return res.status(409).json({
+          message: "Não é possível excluir este guincho porque há um vínculo de cobrança ou assinatura em andamento.",
+        });
+      }
+
+      const photoPath = localGuinchoPhotoPath(result.guincho.photoUrl);
+      if (photoPath) {
+        try {
+          fs.unlinkSync(photoPath);
+        } catch (error: any) {
+          if (error?.code !== "ENOENT") console.error("Could not remove deleted guincho photo:", error);
+        }
+      }
+      storage.logActivity({
+        action: "guincho_deleted",
+        actorType: "admin",
+        actorId: (req as any).user.id,
+        actorName: (req as any).user.email,
+        targetType: "guincho",
+        targetId: result.guincho.id,
+        description: `Cadastro de guincho excluído: ${result.guincho.tradingName}`,
+      });
+      res.json({ message: "Cadastro do guincho excluído" });
+    } catch (error) {
+      console.error("Admin delete guincho error:", error);
+      res.status(500).json({ message: "Erro ao excluir guincho" });
+    }
+  });
+
   // Load Asaas config from DB before any scheduled jobs (overrides env var if set in admin panel)
   const savedApiKey = await storage.getSystemSetting("asaasApiKey");
   const savedEnv = await storage.getSystemSetting("asaasEnvironment");
