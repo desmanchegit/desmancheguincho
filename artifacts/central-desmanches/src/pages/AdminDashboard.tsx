@@ -119,18 +119,6 @@ function AdminLoginPage() {
               {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Entrando...</> : "Entrar no Painel"}
             </Button>
           </form>
-          <div className="mt-4 pt-4 border-t border-dashed border-border">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="w-full text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => { setEmail("admin@centraldesmanches.com"); setPassword("admin123"); }}
-              data-testid="button-admin-fill-test"
-            >
-              Preencher credenciais de teste
-            </Button>
-          </div>
         </div>
         <p className="text-center text-xs text-muted-foreground">
           <Link href="/" className="underline hover:no-underline">← Voltar ao site</Link>

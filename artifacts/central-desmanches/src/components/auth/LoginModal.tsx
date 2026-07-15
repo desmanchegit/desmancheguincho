@@ -13,27 +13,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/use-auth";
-import { Loader2, Info, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { Loader2, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface LoginModalProps {
   children?: React.ReactNode;
   defaultOpen?: boolean;
-}
-
-function TestCredentials({ email, password }: { email: string; password: string }) {
-  return (
-    <div className="flex items-start gap-2 rounded-md bg-muted/60 border border-border px-3 py-2 text-xs text-muted-foreground">
-      <Info className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary/70" />
-      <div>
-        <span className="font-semibold text-foreground/70">Acesso de teste:</span>
-        <br />
-        <span className="font-mono">{email}</span>
-        <br />
-        <span className="font-mono">Senha: {password}</span>
-      </div>
-    </div>
-  );
 }
 
 function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
@@ -205,12 +190,10 @@ export function LoginModal({ children, defaultOpen = false }: LoginModalProps) {
             </TabsList>
 
             <TabsContent value="client">
-              <TestCredentials email="recriarme@gmail.com" password="debora123" />
               {loginForm("Email", "client-email")}
             </TabsContent>
 
             <TabsContent value="desmanche">
-              <TestCredentials email="contato@irmaossilva.com" password="desmanche123" />
               {loginForm("Email do Desmanche", "desmanche-email")}
             </TabsContent>
           </Tabs>
