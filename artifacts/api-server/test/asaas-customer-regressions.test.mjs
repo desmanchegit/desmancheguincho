@@ -539,6 +539,36 @@ test("cadastro de guincho persiste planos anual e mensal quando o cliente fica a
   assert.deepEqual(calls, { payments: 0, subscriptions: 0 });
 });
 
+test("cadastro de guincho não compartilha a cota de tentativas entre e-mails no mesmo proxy", async (t) => {
+  const { endpoint } = await startServer(t, (_req, res) => {
+    res.writeHead(404);
+    res.end();
+  }, { asaasConfigured: false });
+
+  for (let index = 0; index < 4; index++) {
+    const response = await fetch(`${endpoint}/api/guinchos/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: `Guincho ${index}`,
+        tradingName: `Guincho ${index}`,
+        documentType: "cpf",
+        cpf: `1234567890${index}`,
+        email: `guincho-${index}@example.test`,
+        phone: "11999999999",
+        whatsapp: "11999999999",
+        password: "secret1",
+        zipCode: "01001000",
+        street: "Rua Teste",
+        city: "São Paulo",
+        state: "SP",
+        plan: "annual",
+      }),
+    });
+    assert.equal(response.status, 201);
+  }
+});
+
 test("rota manual de cobrança cria uma vez, repete localmente e mantém seus bloqueios", async (t) => {
   const calls = { payments: 0 };
   const { endpoint, filename } = await startServer(t, (req, res) => {

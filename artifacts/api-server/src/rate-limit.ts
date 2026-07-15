@@ -1,5 +1,6 @@
-import { rateLimit } from "express-rate-limit";
+import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import type { Request, RequestHandler } from "express";
+import { createHash } from "crypto";
 
 const minutes = (value: number) => value * 60 * 1000;
 
@@ -15,6 +16,32 @@ function createLimiter(windowMs: number, limit: number): RequestHandler {
     legacyHeaders: false,
     statusCode: 429,
     message: jsonLimitResponse,
+    // This deployment has one backend instance. Multiple instances need a shared store.
+  });
+}
+
+/**
+ * Registration limits must not use only the source IP. Behind a reverse proxy,
+ * many legitimate visitors can otherwise be grouped under its address and one
+ * visitor's attempts block another person's first registration. The e-mail is
+ * normalized and hashed so it is neither retained nor exposed as a rate-limit
+ * key. Requests without an e-mail retain the normal IP-based behavior.
+ */
+function registrationKey(req: Request): string {
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  if (!email) return ipKeyGenerator(req.ip ?? req.socket.remoteAddress ?? "unknown");
+  return `registration:${createHash("sha256").update(email).digest("hex")}`;
+}
+
+function createRegistrationLimiter(windowMs: number, limit: number): RequestHandler {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    statusCode: 429,
+    message: jsonLimitResponse,
+    keyGenerator: registrationKey,
     // This deployment has one backend instance. Multiple instances need a shared store.
   });
 }
@@ -46,9 +73,9 @@ const forgotPasswordLimiter = createLimiter(minutes(15), 5);
 const resendVerificationLimiter = createLimiter(minutes(15), 5);
 const resetPasswordLimiter = createLimiter(minutes(15), 10);
 const verifyEmailLimiter = createLimiter(minutes(15), 10);
-const clientRegistrationLimiter = createLimiter(minutes(60), 10);
-const desmancheRegistrationLimiter = createLimiter(minutes(60), 3);
-const guinchoRegistrationLimiter = createLimiter(minutes(60), 3);
+const clientRegistrationLimiter = createRegistrationLimiter(minutes(60), 10);
+const desmancheRegistrationLimiter = createRegistrationLimiter(minutes(60), 3);
+const guinchoRegistrationLimiter = createRegistrationLimiter(minutes(60), 3);
 const cnpjValidationLimiter = createLimiter(minutes(10), 10);
 const uploadLimiter = createLimiter(minutes(15), 20);
 
