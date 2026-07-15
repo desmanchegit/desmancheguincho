@@ -1568,7 +1568,8 @@ export async function registerRoutes(app: Express) {
 
   app.get("/api/documents/:id/download", authMiddleware, async (req, res) => {
     try {
-      const document = await storage.getDocumentById(req.params.id);
+      const { id } = req.params as { id: string };
+      const document = await storage.getDocumentById(id);
       if (!document) return res.status(404).json({ message: "Documento não encontrado" });
 
       const user = (req as any).user;
