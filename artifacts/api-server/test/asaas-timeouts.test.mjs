@@ -3,7 +3,7 @@ import http from "node:http";
 import net from "node:net";
 import test from "node:test";
 import {
-  createAsaasCharge, createAsaasCustomer, createAsaasSubscription, getAsaasChargeStatus, getAsaasSubscriptionPaymentLink,
+  cancelAsaasOpenCharge, cancelAsaasSubscription, createAsaasCharge, createAsaasCustomer, createAsaasSubscription, getAsaasChargeStatus, getAsaasSubscriptionPaymentLink,
   setAsaasBaseUrlForTests, setAsaasConfig,
 } from "../dist/asaas.mjs";
 
@@ -37,7 +37,7 @@ function refusedUrl() {
 test("cliente Asaas usa timeouts, preserva contratos e nunca faz retry", async (t) => {
   const calls = [];
   const baseUrl = await startServer(t, (req, res) => {
-    calls.push({ path: req.url, headers: req.headers });
+    calls.push({ path: req.url, method: req.method, headers: req.headers });
     if (req.url.startsWith("/slow")) return setTimeout(() => res.end(JSON.stringify({ id: "late" })), 200);
     if (req.url.startsWith("/error-customer")) {
       res.writeHead(400, { "content-type": "application/json" });
@@ -48,7 +48,7 @@ test("cliente Asaas usa timeouts, preserva contratos e nunca faz retry", async (
       return res.end(JSON.stringify({ issue: "internal" }));
     }
     res.writeHead(200, { "content-type": "application/json" });
-    if (req.url.startsWith("/payments/")) return res.end(JSON.stringify({ status: "PENDING" }));
+    if (req.url.startsWith("/payments/")) return res.end(JSON.stringify({ id: "pay_test", status: "PENDING", externalReference: null }));
     if (req.url.startsWith("/subscriptions/") && req.url.includes("/payments")) {
       return res.end(JSON.stringify({
         data: [{ id: "pay_subscription", status: "PENDING", invoiceUrl: "http://local/subscription-invoice", externalReference: null }],
@@ -79,7 +79,11 @@ test("cliente Asaas usa timeouts, preserva contratos e nunca faz retry", async (
   assert.deepEqual(await createAsaasSubscription(subscription), { id: "asaas_test", status: "PENDING" });
   assert.equal(await getAsaasSubscriptionPaymentLink("sub_test"), "http://local/subscription-invoice");
   assert.equal(await getAsaasChargeStatus("pay_test"), "PENDING");
-  assert.deepEqual(timeoutValues, [12000, 12000, 12000, 8000, 8000]);
+  assert.equal(await cancelAsaasSubscription("sub_test"), true);
+  assert.equal(await cancelAsaasOpenCharge("pay_test"), true);
+  assert.ok(calls.some((call) => call.path === "/subscriptions/sub_test" && call.method === "DELETE"));
+  assert.ok(calls.some((call) => call.path === "/payments/pay_test" && call.method === "DELETE"));
+  assert.deepEqual(timeoutValues, [12000, 12000, 12000, 8000, 8000, 8000, 8000, 8000]);
   assert.ok(calls.every((call) => call.headers.access_token === "fake-asaas-key" && call.headers["content-type"] === "application/json"));
 
   setAsaasBaseUrlForTests(baseUrl + "/error-customer");

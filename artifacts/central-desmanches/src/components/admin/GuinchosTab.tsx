@@ -374,7 +374,7 @@ function DeleteGuinchoDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Excluir cadastro de guincho?</AlertDialogTitle>
           <AlertDialogDescription>
-            O cadastro de <strong>{target?.trading_name}</strong> será removido permanentemente somente se não houver atividade ou cobrança vinculada. Caso exista algum impedimento, o sistema informará antes de excluir.
+            O cadastro de <strong>{target?.trading_name}</strong> será removido permanentemente. Se houver uma cobrança pendente ou assinatura ativa, ela será cancelada no Asaas antes da exclusão.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

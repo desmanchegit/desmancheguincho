@@ -3945,24 +3945,30 @@ export async function registerRoutes(app: Express) {
     }
   });
 
-  // Admin: permanently remove a test/unlinked guincho registration.
+  // Admin: permanently remove a guincho after cancelling open Asaas billing.
   app.delete("/api/admin/guinchos/:id", authMiddleware, requireType(["admin"]), async (req, res) => {
     try {
       const { id } = req.params as { id: string };
-      const result = storage.deleteGuinchoIfUnlinked(id);
-      if (result.outcome === "not_found") {
+      const candidate = storage.getGuinchoDeletionCandidate(id);
+      if (candidate.outcome === "not_found") {
         return res.status(404).json({ message: "Guincho não encontrado" });
       }
-      if (result.outcome === "active") {
+      if (candidate.outcome === "billing_processing") {
         return res.status(409).json({
-          message: "Não é possível excluir um guincho ativo. Desative-o primeiro e verifique se não há vínculos de cobrança.",
+          message: "Não é possível excluir enquanto a criação da cobrança estiver em processamento. Tente novamente em instantes.",
         });
       }
-      if (result.outcome === "billing_linked") {
-        return res.status(409).json({
-          message: "Não é possível excluir este guincho porque há um vínculo de cobrança ou assinatura em andamento.",
-        });
+
+      if (candidate.guincho.asaasSubscriptionId && !await asaas.cancelAsaasSubscription(candidate.guincho.asaasSubscriptionId)) {
+        return res.status(503).json({ message: "Não foi possível cancelar a assinatura no Asaas. O cadastro foi mantido." });
       }
+      if (candidate.guincho.asaasPaymentId && !await asaas.cancelAsaasOpenCharge(candidate.guincho.asaasPaymentId)) {
+        return res.status(503).json({ message: "Não foi possível cancelar a cobrança pendente no Asaas. O cadastro foi mantido." });
+      }
+
+      const result = storage.deleteGuinchoAfterBillingCleanup(id);
+      if (result.outcome === "not_found") return res.status(404).json({ message: "Guincho não encontrado" });
+      if (result.outcome === "billing_processing") return res.status(409).json({ message: "A cobrança começou a ser criada. Tente novamente em instantes." });
 
       const photoPath = localGuinchoPhotoPath(result.guincho.photoUrl);
       if (photoPath) {

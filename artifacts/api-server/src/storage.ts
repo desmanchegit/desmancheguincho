@@ -2787,18 +2787,31 @@ export function getGuinchoByAsaasPaymentId(paymentId: string): any | undefined {
   return sqlite.prepare("SELECT * FROM guinchos WHERE asaas_payment_id = ?").get(paymentId) as any;
 }
 
+export type GuinchoDeletionCandidate =
+  | {
+    outcome: "ready";
+    guincho: {
+      id: string;
+      tradingName: string;
+      photoUrl: string | null;
+      asaasPaymentId: string | null;
+      asaasSubscriptionId: string | null;
+    };
+  }
+  | { outcome: "not_found" }
+  | { outcome: "billing_processing" };
+
 export type DeleteGuinchoResult =
   | { outcome: "deleted"; guincho: { id: string; tradingName: string; photoUrl: string | null } }
   | { outcome: "not_found" }
-  | { outcome: "active" }
-  | { outcome: "billing_linked" };
+  | { outcome: "billing_processing" };
 
 /**
- * Removes only registrations that never became an active operational or
- * billing relationship. The checks and deletion happen in one SQLite
- * transaction so an approval or billing update cannot race the removal.
+ * Returns a guincho that can be removed after the caller has cancelled any
+ * open Asaas billing. An Asaas creation in progress remains a hard block,
+ * because it could still create a charge after the local registration is gone.
  */
-export const deleteGuinchoIfUnlinked = sqlite.transaction((id: string): DeleteGuinchoResult => {
+export function getGuinchoDeletionCandidate(id: string): GuinchoDeletionCandidate {
   const guincho = sqlite.prepare(`
     SELECT id, trading_name, photo_url, status, asaas_customer_id, asaas_payment_id, asaas_subscription_id
     FROM guinchos
@@ -2814,27 +2827,42 @@ export const deleteGuinchoIfUnlinked = sqlite.transaction((id: string): DeleteGu
   } | undefined;
 
   if (!guincho) return { outcome: "not_found" };
-  if (guincho.status === "active") return { outcome: "active" };
 
-  // A local Asaas identifier or a non-failed creation intent can represent an
-  // existing or indeterminate external charge. Keep the registration intact
-  // until that financial relationship is resolved.
-  const hasBillingLink = Boolean(
-    guincho.asaas_customer_id || guincho.asaas_payment_id || guincho.asaas_subscription_id,
-  ) || Boolean(sqlite.prepare(`
+  const billingIsBeingCreated = Boolean(sqlite.prepare(`
     SELECT 1
     FROM asaas_creation_intents
     WHERE entity_type = 'guincho'
       AND entity_id = ?
-      AND status <> 'failed'
+      AND status NOT IN ('created', 'failed')
     LIMIT 1
   `).get(id));
-  if (hasBillingLink) return { outcome: "billing_linked" };
+  if (billingIsBeingCreated) return { outcome: "billing_processing" };
 
+  return {
+    outcome: "ready",
+    guincho: {
+      id: guincho.id,
+      tradingName: guincho.trading_name,
+      photoUrl: guincho.photo_url,
+      asaasPaymentId: guincho.asaas_payment_id,
+      asaasSubscriptionId: guincho.asaas_subscription_id,
+    },
+  };
+}
+
+/** Completes local deletion only after remote open billing was cancelled. */
+export const deleteGuinchoAfterBillingCleanup = sqlite.transaction((id: string): DeleteGuinchoResult => {
+  const candidate = getGuinchoDeletionCandidate(id);
+  if (candidate.outcome !== "ready") return candidate;
+
+  // Intent records are only idempotency history for this registration. Keeping
+  // them after deletion would prevent a later registration from being cleanly
+  // independent of this one.
+  sqlite.prepare("DELETE FROM asaas_creation_intents WHERE entity_type = 'guincho' AND entity_id = ?").run(id);
   sqlite.prepare("DELETE FROM guinchos WHERE id = ?").run(id);
   return {
     outcome: "deleted",
-    guincho: { id: guincho.id, tradingName: guincho.trading_name, photoUrl: guincho.photo_url },
+    guincho: candidate.guincho,
   };
 });
 

@@ -45,7 +45,9 @@ type AsaasOperation =
   | "create customer"
   | "create charge"
   | "get charge"
+  | "delete charge"
   | "create subscription"
+  | "delete subscription"
   | "list customers"
   | "list payments"
   | "list subscriptions";
@@ -268,6 +270,45 @@ export async function getAsaasChargeStatus(chargeId: string): Promise<string | n
     return data.status;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Cancels a recurring subscription before its platform registration is
+ * removed. A missing subscription is already safe to forget locally.
+ */
+export async function cancelAsaasSubscription(subscriptionId: string): Promise<boolean> {
+  if (!isAsaasConfigured()) return false;
+  try {
+    const res = await asaasFetch("delete subscription", "/subscriptions/" + encodeURIComponent(subscriptionId), 8_000, {
+      method: "DELETE",
+    });
+    return res.ok || res.status === 404;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Removes an open one-off charge. Settled charges are financial history, not
+ * an ongoing obligation, and therefore do not prevent account removal.
+ */
+export async function cancelAsaasOpenCharge(chargeId: string): Promise<boolean> {
+  if (!isAsaasConfigured()) return false;
+  try {
+    const current = await asaasFetch("get charge", "/payments/" + encodeURIComponent(chargeId), 8_000);
+    if (current.status === 404) return true;
+    if (!current.ok) return false;
+    const payment = parseAsaasPayment(await current.json(), false);
+    if (!payment?.status) return false;
+    if (!['PENDING', 'OVERDUE'].includes(payment.status)) return true;
+
+    const res = await asaasFetch("delete charge", "/payments/" + encodeURIComponent(chargeId), 8_000, {
+      method: "DELETE",
+    });
+    return res.ok || res.status === 404;
+  } catch {
+    return false;
   }
 }
 
