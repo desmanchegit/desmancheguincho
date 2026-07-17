@@ -3066,6 +3066,32 @@ export async function registerRoutes(app: Express) {
     }
   });
 
+  app.post("/api/admin/clear-test-data", authMiddleware, requireType(["admin"]), (req, res) => {
+    const cleanupAdminEmail = "admin@centraldesmanches.com";
+    const caller = (req as any).user as { email?: string };
+    const confirmationEmail = typeof req.body?.confirmationEmail === "string"
+      ? req.body.confirmationEmail.trim().toLowerCase()
+      : "";
+
+    if (caller.email?.trim().toLowerCase() !== cleanupAdminEmail) {
+      return res.status(403).json({ message: "Somente a conta administrativa principal pode limpar os dados." });
+    }
+    if (confirmationEmail !== cleanupAdminEmail) {
+      return res.status(400).json({ message: "Digite o e-mail da conta preservada para confirmar a limpeza." });
+    }
+
+    try {
+      const result = storage.clearTestData(cleanupAdminEmail);
+      res.json({ success: true, ...result });
+    } catch (error) {
+      if (error instanceof Error && error.message === "preserved_admin_not_found") {
+        return res.status(409).json({ message: "A conta administrativa que deve ser preservada não foi encontrada." });
+      }
+      console.error("Clear test data error:", error);
+      res.status(500).json({ message: "Erro ao limpar os dados de teste." });
+    }
+  });
+
   // Endpoint manual: forçar detecção de negociações paradas
   app.post("/api/admin/negotiations/detect-stale", authMiddleware, requireType(["admin"]), async (req, res) => {
     try {
