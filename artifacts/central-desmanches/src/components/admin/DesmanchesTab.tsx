@@ -12,7 +12,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { Search, ChevronRight, Loader2, AlertTriangle, Building2, Eye, EyeOff, CheckCircle2, AlertCircle } from "lucide-react";
+import { Search, ChevronRight, Loader2, AlertTriangle, Building2, Eye, EyeOff, CheckCircle2, AlertCircle, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const ALERT_DAYS = 30;
@@ -84,6 +84,7 @@ export default function DesmanchesTab({ onSelectDesmanche }: { onSelectDesmanche
   const [showPw, setShowPw] = useState(false);
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [cnpjStatus, setCnpjStatus] = useState<"idle" | "found" | "error">("idle");
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const { toast } = useToast();
 
   const formatPhone = (raw: string) => {
@@ -177,6 +178,22 @@ export default function DesmanchesTab({ onSelectDesmanche }: { onSelectDesmanche
     onError: (err: Error) => {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/admin/desmanches/${id}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Erro ao excluir desmanche");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/desmanches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      setDeleteTarget(null);
+      toast({ title: "Desmanche excluído" });
+    },
+    onError: (err: Error) => toast({ title: "Não foi possível excluir", description: err.message, variant: "destructive" }),
   });
 
   const set = (field: keyof typeof EMPTY_FORM, value: string) => setForm((p) => ({ ...p, [field]: value }));
@@ -317,6 +334,11 @@ export default function DesmanchesTab({ onSelectDesmanche }: { onSelectDesmanche
                         )}
                       </TableCell>
                       <TableCell className="text-right pr-6">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 mr-1 text-muted-foreground hover:text-destructive" title="Excluir desmanche"
+                          onClick={(event) => { event.stopPropagation(); setDeleteTarget(d); }} disabled={deleteMutation.isPending}
+                          data-testid={`button-delete-desmanche-${d.id}`}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                         <ChevronRight className="h-4 w-4 text-muted-foreground inline" />
                       </TableCell>
                     </TableRow>
@@ -522,6 +544,16 @@ export default function DesmanchesTab({ onSelectDesmanche }: { onSelectDesmanche
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Excluir desmanche?</DialogTitle>
+            <DialogDescription>Esta ação remove permanentemente <strong>{deleteTarget?.tradingName || deleteTarget?.companyName}</strong>. Ela só será permitida sem propostas, negociações, cobranças ou reclamações em andamento.</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleteMutation.isPending}>Cancelar</Button><Button variant="destructive" onClick={() => deleteMutation.mutate(deleteTarget.id)} disabled={deleteMutation.isPending}>{deleteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Excluir permanentemente</Button></div>
         </DialogContent>
       </Dialog>
     </div>

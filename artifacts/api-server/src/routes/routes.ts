@@ -1972,6 +1972,17 @@ export async function registerRoutes(app: Express) {
       res.status(500).json({ message: "Erro ao atualizar status" });
     }
   });
+
+  app.delete("/api/admin/users/:id", authMiddleware, requireType(["admin"]), (req, res) => {
+    const result = storage.deleteUserIfSafe((req.params as { id: string }).id);
+    if (result.outcome !== "deleted") {
+      if (result.outcome === "not_found") return res.status(404).json({ message: "Pessoa não encontrada" });
+      if (result.outcome === "protected") return res.status(403).json({ message: "Contas administrativas não podem ser excluídas por esta tela." });
+      return res.status(409).json({ message: `Não é possível excluir: ${result.blockers.join(", ")}.` });
+    }
+    storage.logActivity({ action: "user_deleted", actorType: "admin", actorId: (req as any).user.id, actorName: (req as any).user.email, targetType: "user", targetId: (req.params as { id: string }).id, description: `Pessoa excluída: ${result.name}` });
+    res.json({ message: "Pessoa excluída" });
+  });
   
   app.get("/api/admin/orders/:id", authMiddleware, requireType(["admin"]), async (req, res) => {
     try {
@@ -2105,6 +2116,17 @@ export async function registerRoutes(app: Express) {
       console.error("Update desmanche status error:", error);
       res.status(500).json({ message: "Erro ao atualizar status" });
     }
+  });
+
+  app.delete("/api/admin/desmanches/:id", authMiddleware, requireType(["admin"]), (req, res) => {
+    const result = storage.deleteDesmancheIfSafe((req.params as { id: string }).id);
+    if (result.outcome !== "deleted") {
+      if (result.outcome === "not_found") return res.status(404).json({ message: "Desmanche não encontrado" });
+      if (result.outcome === "protected") return res.status(403).json({ message: "Não é possível excluir este tipo de conta." });
+      return res.status(409).json({ message: `Não é possível excluir: ${result.blockers.join(", ")}.` });
+    }
+    storage.logActivity({ action: "desmanche_deleted", actorType: "admin", actorId: (req as any).user.id, actorName: (req as any).user.email, targetType: "desmanche", targetId: (req.params as { id: string }).id, description: `Desmanche excluído: ${result.name}` });
+    res.json({ message: "Desmanche excluído" });
   });
 
   app.get("/api/admin/desmanches", authMiddleware, requireType(["admin"]), async (req, res) => {

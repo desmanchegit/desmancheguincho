@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { Search, Mail, Phone, Calendar, ChevronRight, UserPlus, Loader2, Eye, EyeOff, Power } from "lucide-react";
+import { Search, Mail, Phone, Calendar, ChevronRight, UserPlus, Loader2, Eye, EyeOff, Power, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 function formatMemberSince(dateStr: string) {
@@ -48,6 +48,7 @@ export default function UsersTab({ onSelectUser }: { onSelectUser?: (id: string)
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [showPw, setShowPw] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const { toast } = useToast();
 
   const { data: users = [], isLoading } = useQuery<any[]>({
@@ -93,6 +94,22 @@ export default function UsersTab({ onSelectUser }: { onSelectUser?: (id: string)
       toast({ title: vars.status === "active" ? "Usuário ativado" : "Usuário desativado" });
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/admin/users/${id}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Erro ao excluir pessoa");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      setDeleteTarget(null);
+      toast({ title: "Pessoa excluída" });
+    },
+    onError: (err: Error) => toast({ title: "Não foi possível excluir", description: err.message, variant: "destructive" }),
   });
 
   const set = (field: keyof typeof EMPTY_FORM, value: string) => setForm((p) => ({ ...p, [field]: value }));
@@ -171,6 +188,13 @@ export default function UsersTab({ onSelectUser }: { onSelectUser?: (id: string)
                     >
                       <Power className="h-3.5 w-3.5" />
                     </Button>
+                    {user.type === "client" && (
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" title="Excluir pessoa"
+                        onClick={(e) => { e.stopPropagation(); setDeleteTarget(user); }} disabled={deleteMutation.isPending}
+                        data-testid={`button-delete-user-${user.id}`}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     <ChevronRight className="h-4 w-4 text-muted-foreground cursor-pointer" onClick={() => onSelectUser?.(user.id)} />
                   </div>
                 </div>
@@ -255,6 +279,16 @@ export default function UsersTab({ onSelectUser }: { onSelectUser?: (id: string)
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Excluir pessoa?</DialogTitle>
+            <DialogDescription>Esta ação remove permanentemente <strong>{deleteTarget?.name}</strong>. Ela só será permitida se não houver pedidos, negociações, cobranças ou reclamações em andamento.</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleteMutation.isPending}>Cancelar</Button><Button variant="destructive" onClick={() => deleteMutation.mutate(deleteTarget.id)} disabled={deleteMutation.isPending}>{deleteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Excluir permanentemente</Button></div>
         </DialogContent>
       </Dialog>
     </div>

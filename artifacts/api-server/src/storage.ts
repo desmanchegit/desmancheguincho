@@ -2838,6 +2838,77 @@ export const deleteGuinchoIfUnlinked = sqlite.transaction((id: string): DeleteGu
   };
 });
 
+type SafeDeletionResult =
+  | { outcome: "deleted"; name: string }
+  | { outcome: "not_found" }
+  | { outcome: "protected" }
+  | { outcome: "blocked"; blockers: string[] };
+
+const ACTIVE_ORDER_STATUSES = "'open','has_proposals','negotiating','shipped','delivered','awaiting_review'";
+
+function hasDeletionRows(sqlText: string, ...params: unknown[]): boolean {
+  return Boolean(sqlite.prepare(sqlText).get(...params));
+}
+
+/** Permanently removes a client only after all live commerce and finance flows are closed. */
+export const deleteUserIfSafe = sqlite.transaction((id: string): SafeDeletionResult => {
+  const user = sqlite.prepare("SELECT id, name, type FROM users WHERE id = ?").get(id) as { id: string; name: string; type: string } | undefined;
+  if (!user) return { outcome: "not_found" };
+  if (user.type !== "client") return { outcome: "protected" };
+
+  const blockers: string[] = [];
+  if (hasDeletionRows(`SELECT 1 FROM orders WHERE client_id = ? AND status IN (${ACTIVE_ORDER_STATUSES}) LIMIT 1`, id)) blockers.push("pedido em andamento");
+  if (hasDeletionRows("SELECT 1 FROM negotiations WHERE client_id = ? AND status NOT IN ('completed','cancelled') LIMIT 1", id)) blockers.push("negociação em andamento");
+  if (hasDeletionRows(`SELECT 1 FROM billing_transactions WHERE negotiation_id IN (SELECT id FROM negotiations WHERE client_id = ?) LIMIT 1`, id)) blockers.push("cobrança vinculada");
+  if (hasDeletionRows("SELECT 1 FROM complaints WHERE (author_id = ? OR target_id = ?) AND status IN ('pending','reviewing') LIMIT 1", id, id)) blockers.push("reclamação em análise");
+  if (blockers.length) return { outcome: "blocked", blockers };
+
+  sqlite.prepare("DELETE FROM chat_messages WHERE room_id IN (SELECT id FROM chat_rooms WHERE client_id = ?)").run(id);
+  sqlite.prepare("DELETE FROM chat_rooms WHERE client_id = ?").run(id);
+  sqlite.prepare("DELETE FROM pre_proposal_messages WHERE room_id IN (SELECT id FROM pre_proposal_rooms WHERE client_id = ?)").run(id);
+  sqlite.prepare("DELETE FROM pre_proposal_rooms WHERE client_id = ?").run(id);
+  sqlite.prepare("DELETE FROM reviews WHERE client_id = ? OR negotiation_id IN (SELECT id FROM negotiations WHERE client_id = ?)").run(id, id);
+  sqlite.prepare("DELETE FROM negotiations WHERE client_id = ?").run(id);
+  sqlite.prepare("DELETE FROM proposals WHERE order_id IN (SELECT id FROM orders WHERE client_id = ?)").run(id);
+  sqlite.prepare("DELETE FROM order_images WHERE order_id IN (SELECT id FROM orders WHERE client_id = ?)").run(id);
+  sqlite.prepare("DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE client_id = ?)").run(id);
+  sqlite.prepare("DELETE FROM orders WHERE client_id = ?").run(id);
+  sqlite.prepare("DELETE FROM addresses WHERE user_id = ?").run(id);
+  sqlite.prepare("DELETE FROM complaints WHERE (author_id = ? OR target_id = ?) AND status NOT IN ('pending','reviewing')").run(id, id);
+  sqlite.prepare("DELETE FROM users WHERE id = ?").run(id);
+  return { outcome: "deleted", name: user.name };
+});
+
+/** Permanently removes a desmanche only when it has no live marketplace or financial relationship. */
+export const deleteDesmancheIfSafe = sqlite.transaction((id: string): SafeDeletionResult => {
+  const desmanche = sqlite.prepare("SELECT id, trading_name, company_name FROM desmanches WHERE id = ?").get(id) as { id: string; trading_name: string; company_name: string } | undefined;
+  if (!desmanche) return { outcome: "not_found" };
+
+  const blockers: string[] = [];
+  if (hasDeletionRows(`SELECT 1 FROM orders WHERE desmanche_id = ? AND status IN (${ACTIVE_ORDER_STATUSES}) LIMIT 1`, id)) blockers.push("pedido em andamento");
+  if (hasDeletionRows("SELECT 1 FROM proposals WHERE desmanche_id = ? AND status IN ('sent','accepted') LIMIT 1", id)) blockers.push("proposta pendente");
+  if (hasDeletionRows("SELECT 1 FROM negotiations WHERE desmanche_id = ? AND status NOT IN ('completed','cancelled') LIMIT 1", id)) blockers.push("negociação em andamento");
+  if (hasDeletionRows("SELECT 1 FROM billing_transactions WHERE desmanche_id = ? LIMIT 1", id)) blockers.push("cobrança vinculada");
+  if (hasDeletionRows("SELECT 1 FROM desmanche_billing WHERE desmanche_id = ? AND asaas_customer_id IS NOT NULL LIMIT 1", id)) blockers.push("cliente de cobrança vinculado");
+  if (hasDeletionRows("SELECT 1 FROM asaas_creation_intents WHERE entity_type = 'desmanche' AND entity_id = ? AND status <> 'failed' LIMIT 1", id)) blockers.push("cobrança em processamento");
+  if (hasDeletionRows("SELECT 1 FROM complaints WHERE (author_id = ? OR target_id = ?) AND status IN ('pending','reviewing') LIMIT 1", id, id)) blockers.push("reclamação em análise");
+  if (blockers.length) return { outcome: "blocked", blockers };
+
+  sqlite.prepare("DELETE FROM chat_messages WHERE room_id IN (SELECT id FROM chat_rooms WHERE desmanche_id = ?)").run(id);
+  sqlite.prepare("DELETE FROM chat_rooms WHERE desmanche_id = ?").run(id);
+  sqlite.prepare("DELETE FROM pre_proposal_messages WHERE room_id IN (SELECT id FROM pre_proposal_rooms WHERE desmanche_id = ?)").run(id);
+  sqlite.prepare("DELETE FROM pre_proposal_rooms WHERE desmanche_id = ?").run(id);
+  sqlite.prepare("DELETE FROM reviews WHERE desmanche_id = ? OR negotiation_id IN (SELECT id FROM negotiations WHERE desmanche_id = ?)").run(id, id);
+  sqlite.prepare("DELETE FROM negotiations WHERE desmanche_id = ?").run(id);
+  sqlite.prepare("DELETE FROM proposals WHERE desmanche_id = ?").run(id);
+  sqlite.prepare("DELETE FROM documents WHERE desmanche_id = ?").run(id);
+  sqlite.prepare("DELETE FROM desmanche_addresses WHERE desmanche_id = ?").run(id);
+  sqlite.prepare("DELETE FROM desmanche_billing WHERE desmanche_id = ?").run(id);
+  sqlite.prepare("DELETE FROM complaints WHERE (author_id = ? OR target_id = ?) AND status NOT IN ('pending','reviewing')").run(id, id);
+  sqlite.prepare("DELETE FROM desmanches WHERE id = ?").run(id);
+  return { outcome: "deleted", name: desmanche.trading_name || desmanche.company_name };
+});
+
 export async function updateGuinchoProfile(id: string, data: {
   name?: string; tradingName?: string; phone?: string; whatsapp?: string; description?: string;
   serviceRadius?: number; zipCode?: string; street?: string; number?: string; neighborhood?: string; city?: string; state?: string;
