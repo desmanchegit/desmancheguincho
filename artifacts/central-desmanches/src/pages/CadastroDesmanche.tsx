@@ -12,7 +12,7 @@ import {
   CheckCircle2, TrendingUp, ShieldCheck, Users, Star, Package,
   MapPin, Building2, UserCheck, FileText, ImageIcon, Lock,
   Loader2, ArrowLeft, Upload, ChevronRight, Search, AlertCircle,
-  Info, CreditCard, Calendar,
+  Info, CreditCard, Calendar, Mail, MessageCircle, Send,
 } from "lucide-react";
 import logoImg from "@assets/Design_sem_nome_(23)_1772229532951.png";
 
@@ -96,6 +96,12 @@ export default function CadastroDesmanche() {
   const [cnpjStatus, setCnpjStatus] = useState<"idle" | "found" | "error">("idle");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [confirmationChannel, setConfirmationChannel] = useState<"email" | "sms" | "whatsapp">("email");
+  const [confirmationChallengeId, setConfirmationChallengeId] = useState<string | null>(null);
+  const [confirmationCode, setConfirmationCode] = useState("");
+  const [confirmationToken, setConfirmationToken] = useState<string | null>(null);
+  const [isSendingCode, setIsSendingCode] = useState(false);
+  const [isConfirmingCode, setIsConfirmingCode] = useState(false);
 
   const set = (field: string, value: string | number) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -191,7 +197,37 @@ export default function CadastroDesmanche() {
     return res.json();
   };
 
-  const handleSubmit = async () => {
+  const sendConfirmationCode = async () => {
+    setIsSendingCode(true);
+    try {
+      const res = await fetch("/api/auth/desmanche-registration/send-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: form.email,
+          phone: form.phone,
+          channel: confirmationChannel,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Não foi possível enviar o código.");
+      setConfirmationChallengeId(data.challengeId);
+      setConfirmationCode("");
+      setConfirmationToken(null);
+      toast({
+        title: "Código enviado",
+        description: confirmationChannel === "email"
+          ? "Verifique sua caixa de entrada."
+          : `Enviamos o código para ${form.phone}.`,
+      });
+    } catch (err: any) {
+      toast({ title: "Erro ao enviar código", description: err?.message || "Tente novamente.", variant: "destructive" });
+    } finally {
+      setIsSendingCode(false);
+    }
+  };
+
+  const submitRegistration = async (verifiedToken: string) => {
     if (form.password !== form.confirmPassword) {
       toast({ title: "Senhas não conferem", variant: "destructive" });
       return;
@@ -213,6 +249,7 @@ export default function CadastroDesmanche() {
         plan:            "monthly",
         responsibleName: form.responsibleName,
         responsibleCpf:  form.responsibleCpf,
+        confirmationToken: verifiedToken,
       });
 
       const token = localStorage.getItem("peca_rapida_token") as string;
@@ -277,6 +314,36 @@ export default function CadastroDesmanche() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const confirmCodeAndSubmit = async () => {
+    if (!confirmationChallengeId || !/^\d{6}$/.test(confirmationCode)) {
+      toast({ title: "Informe o código de 6 dígitos", variant: "destructive" });
+      return;
+    }
+    setIsConfirmingCode(true);
+    try {
+      const res = await fetch("/api/auth/desmanche-registration/confirm-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeId: confirmationChallengeId, code: confirmationCode }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Não foi possível confirmar o código.");
+      setConfirmationToken(data.confirmationToken);
+      await submitRegistration(data.confirmationToken);
+    } catch (err: any) {
+      toast({ title: "Erro na confirmação", description: err?.message || "Tente novamente.", variant: "destructive" });
+    } finally {
+      setIsConfirmingCode(false);
+    }
+  };
+
+  const changeConfirmationChannel = (channel: "email" | "sms" | "whatsapp") => {
+    setConfirmationChannel(channel);
+    setConfirmationChallengeId(null);
+    setConfirmationCode("");
+    setConfirmationToken(null);
   };
 
   const toggleVehicleType = (id: string) => {
@@ -641,6 +708,50 @@ export default function CadastroDesmanche() {
                       R$ 25,00 por negociação concluída. Ao atingir R$ 350,00 no mês, as demais operações são isentas de cobrança.
                     </p>
                   </div>
+
+                  <div className="space-y-3 rounded-xl border p-5">
+                    <div>
+                      <h3 className="font-semibold">Confirmação do cadastro</h3>
+                      <p className="text-sm text-muted-foreground mt-1">Escolha como deseja receber o código de confirmação.</p>
+                    </div>
+                    <div className="grid sm:grid-cols-3 gap-2">
+                      {[
+                        { value: "email" as const, label: "E-mail", icon: Mail },
+                        { value: "sms" as const, label: "SMS", icon: Send },
+                        { value: "whatsapp" as const, label: "WhatsApp", icon: MessageCircle },
+                      ].map(({ value, label, icon: Icon }) => (
+                        <Button
+                          key={value}
+                          type="button"
+                          variant={confirmationChannel === value ? "default" : "outline"}
+                          className="justify-start gap-2"
+                          onClick={() => changeConfirmationChannel(value)}
+                          disabled={isSendingCode || isConfirmingCode || isSubmitting}
+                        >
+                          <Icon className="h-4 w-4" /> {label}
+                        </Button>
+                      ))}
+                    </div>
+                    {confirmationChallengeId && !confirmationToken && (
+                      <div className="space-y-3 pt-2">
+                        <Label htmlFor="desmanche-confirmation-code">Código de confirmação</Label>
+                        <Input
+                          id="desmanche-confirmation-code"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          placeholder="000000"
+                          maxLength={6}
+                          value={confirmationCode}
+                          onChange={(e) => setConfirmationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                          className="max-w-48 text-center font-mono text-lg tracking-[0.35em]"
+                          data-testid="input-desmanche-confirmation-code"
+                        />
+                        <Button type="button" variant="link" className="px-0" onClick={sendConfirmationCode} disabled={isSendingCode || isConfirmingCode || isSubmitting}>
+                          Reenviar código
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
 
@@ -716,10 +827,21 @@ export default function CadastroDesmanche() {
                   </Button>
                 )}
                 {step === 4 && (
-                  <Button onClick={handleSubmit} disabled={isSubmitting || !canAdvance()} className="gap-2">
-                    {isSubmitting
-                      ? <><Loader2 className="h-4 w-4 animate-spin" /> Enviando...</>
-                      : <><CheckCircle2 className="h-4 w-4" /> Enviar Cadastro</>
+                  <Button
+                    onClick={confirmationToken
+                      ? () => submitRegistration(confirmationToken)
+                      : confirmationChallengeId ? confirmCodeAndSubmit : sendConfirmationCode}
+                    disabled={isSendingCode || isConfirmingCode || isSubmitting || !canAdvance()}
+                    className="gap-2"
+                    data-testid="button-desmanche-confirmation"
+                  >
+                    {isSendingCode || isConfirmingCode || isSubmitting
+                      ? <><Loader2 className="h-4 w-4 animate-spin" /> {isSendingCode ? "Enviando código..." : isConfirmingCode ? "Confirmando..." : "Enviando..."}</>
+                      : confirmationToken
+                        ? <><CheckCircle2 className="h-4 w-4" /> Enviar Cadastro</>
+                        : confirmationChallengeId
+                          ? <><CheckCircle2 className="h-4 w-4" /> Confirmar e Enviar Cadastro</>
+                        : <><Send className="h-4 w-4" /> Enviar código de confirmação</>
                     }
                   </Button>
                 )}

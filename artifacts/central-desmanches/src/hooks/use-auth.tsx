@@ -65,6 +65,7 @@ interface RegisterDesmancheData {
   plan: "percentage" | "monthly";
   responsibleName: string;
   responsibleCpf: string;
+  confirmationToken: string;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);

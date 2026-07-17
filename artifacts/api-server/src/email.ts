@@ -46,6 +46,64 @@ export async function sendVerificationEmail(to: string, token: string) {
   );
 }
 
+export async function sendDesmancheRegistrationCode(to: string, code: string) {
+  await sendMail(
+    to,
+    "Código de confirmação — Central dos Desmanches",
+    `
+    <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;background:#f8fafc;border-radius:12px;">
+      <h2 style="color:#1e293b;margin-bottom:8px;">Confirme seu cadastro</h2>
+      <p style="color:#475569;">Use o código abaixo para confirmar o cadastro do seu desmanche.</p>
+      <p style="margin:24px 0;padding:16px;background:#fff;border-radius:8px;text-align:center;font-size:30px;font-weight:700;letter-spacing:8px;color:#ea580c;">${code}</p>
+      <p style="color:#94a3b8;font-size:13px;">O código expira em 10 minutos. Não o compartilhe com ninguém.</p>
+    </div>
+    `
+  );
+}
+
+type DesmancheConfirmationChannel = "sms" | "whatsapp";
+
+export async function sendDesmancheRegistrationMessage(
+  channel: DesmancheConfirmationChannel,
+  to: string,
+  code: string,
+) {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const configuredFrom = channel === "sms"
+    ? process.env.TWILIO_SMS_FROM
+    : process.env.TWILIO_WHATSAPP_FROM;
+
+  if (!accountSid || !authToken || !configuredFrom) {
+    throw new Error(`Envio por ${channel === "sms" ? "SMS" : "WhatsApp"} não está configurado.`);
+  }
+
+  const prefix = channel === "whatsapp" ? "whatsapp:" : "";
+  const from = configuredFrom.replace(/^whatsapp:/, "");
+  const body = new URLSearchParams({
+    To: `${prefix}${to}`,
+    From: `${prefix}${from}`,
+    Body: `Central dos Desmanches: seu código de confirmação é ${code}. Ele expira em 10 minutos. Não compartilhe este código.`,
+  });
+  const authorization = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+  const response = await fetch(
+    `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(accountSid)}/Messages.json`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${authorization}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
+    },
+  );
+
+  if (!response.ok) {
+    console.error("Twilio confirmation message error:", response.status, await response.text());
+    throw new Error("Não foi possível enviar o código. Tente novamente ou escolha outro canal.");
+  }
+}
+
 export async function sendModerationNotificationEmail(opts: {
   clientEmail: string;
   clientName: string;

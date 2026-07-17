@@ -67,6 +67,21 @@ sqlite.exec(`
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
   );
 
+  CREATE TABLE IF NOT EXISTS desmanche_registration_verifications (
+    id TEXT PRIMARY KEY,
+    channel TEXT NOT NULL CHECK (channel IN ('email', 'sms', 'whatsapp')),
+    email TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    consumed_at INTEGER,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS desmanche_registration_verifications_expires_at_idx
+    ON desmanche_registration_verifications(expires_at);
+
   CREATE TABLE IF NOT EXISTS desmanche_addresses (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     desmanche_id TEXT NOT NULL REFERENCES desmanches(id),
@@ -773,6 +788,47 @@ export async function createDesmanche(data: schema.InsertDesmanche) {
   });
   
   return getDesmancheById(id);
+}
+
+// ==================== DESMANCHE REGISTRATION VERIFICATION ====================
+
+export function createDesmancheRegistrationVerification(data: {
+  id: string;
+  channel: "email" | "sms" | "whatsapp";
+  email: string;
+  phone: string;
+  codeHash: string;
+  expiresAt: number;
+}) {
+  sqlite.prepare(`
+    INSERT INTO desmanche_registration_verifications
+      (id, channel, email, phone, code_hash, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(data.id, data.channel, data.email, data.phone, data.codeHash, data.expiresAt);
+}
+
+export function getDesmancheRegistrationVerification(id: string): any {
+  return sqlite.prepare(`
+    SELECT id, channel, email, phone, code_hash, expires_at, attempts, consumed_at
+    FROM desmanche_registration_verifications
+    WHERE id = ?
+  `).get(id);
+}
+
+export function incrementDesmancheRegistrationVerificationAttempts(id: string) {
+  sqlite.prepare(`
+    UPDATE desmanche_registration_verifications
+    SET attempts = attempts + 1
+    WHERE id = ?
+  `).run(id);
+}
+
+export function consumeDesmancheRegistrationVerification(id: string) {
+  return sqlite.prepare(`
+    UPDATE desmanche_registration_verifications
+    SET consumed_at = strftime('%s', 'now')
+    WHERE id = ? AND consumed_at IS NULL
+  `).run(id).changes === 1;
 }
 
 export async function getAllDesmanches(filters?: { status?: string; plan?: string }) {

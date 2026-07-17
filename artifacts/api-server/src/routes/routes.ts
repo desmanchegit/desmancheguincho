@@ -14,7 +14,7 @@ import {
 import { ensureAsaasPaymentForBillingTransaction } from "../asaas-payment-service-runtime";
 import type { EnsureAsaasCustomerResult } from "../asaas-customer-service";
 import * as email from "../email";
-import { createHash, randomBytes, timingSafeEqual } from "crypto";
+import { createHash, randomBytes, randomInt, timingSafeEqual } from "crypto";
 import bcrypt from "bcryptjs";
 import { asaasWebhookToken, guinchoPhotosDir, jwtSecret, privateDocumentsDir, publicUploadsDir } from "../config";
 
@@ -224,6 +224,20 @@ function requireType(types: string[]) {
     }
     next();
   };
+}
+
+const desmancheConfirmationChannels = ["email", "sms", "whatsapp"] as const;
+
+function normalizeBrazilianPhone(value: string): string | null {
+  const digits = value.replace(/\D/g, "");
+  const nationalNumber = digits.length === 10 || digits.length === 11
+    ? `55${digits}`
+    : digits;
+  return /^55\d{10,11}$/.test(nationalNumber) ? `+${nationalNumber}` : null;
+}
+
+function createDesmancheConfirmationCodeHash(challengeId: string, code: string) {
+  return createHash("sha256").update(`${jwtSecret}:${challengeId}:${code}`).digest("hex");
 }
 
 export async function registerRoutes(app: Express) {
@@ -496,9 +510,111 @@ export async function registerRoutes(app: Express) {
   });
 
   // Registro de desmanche
+  app.post("/api/auth/desmanche-registration/send-code", async (req, res) => {
+    try {
+      const requestData = z.object({
+        email: z.string().trim().email(),
+        phone: z.string().trim().min(1),
+        channel: z.enum(desmancheConfirmationChannels),
+      }).parse(req.body);
+      const emailAddress = requestData.email.toLowerCase();
+      const phone = normalizeBrazilianPhone(requestData.phone);
+      if (!phone) return res.status(400).json({ message: "Informe um telefone brasileiro válido com DDD." });
+
+      const existingEmail = await storage.getDesmancheByEmail(emailAddress);
+      if (existingEmail) return res.status(400).json({ message: "E-mail já cadastrado" });
+
+      const challengeId = randomBytes(24).toString("hex");
+      const code = String(randomInt(100000, 1_000_000));
+      storage.createDesmancheRegistrationVerification({
+        id: challengeId,
+        channel: requestData.channel,
+        email: emailAddress,
+        phone,
+        codeHash: createDesmancheConfirmationCodeHash(challengeId, code),
+        expiresAt: Math.floor(Date.now() / 1000) + 600,
+      });
+
+      if (requestData.channel === "email") {
+        await email.sendDesmancheRegistrationCode(emailAddress, code);
+      } else {
+        await email.sendDesmancheRegistrationMessage(requestData.channel, phone, code);
+      }
+
+      res.status(201).json({ challengeId, expiresIn: 600 });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ message: "Dados inválidos", errors: error.issues });
+      console.error("Send desmanche confirmation code error:", error);
+      res.status(500).json({ message: error instanceof Error ? error.message : "Erro ao enviar o código" });
+    }
+  });
+
+  app.post("/api/auth/desmanche-registration/confirm-code", async (req, res) => {
+    try {
+      const requestData = z.object({
+        challengeId: z.string().regex(/^[a-f0-9]{48}$/),
+        code: z.string().regex(/^\d{6}$/),
+      }).parse(req.body);
+      const verification = storage.getDesmancheRegistrationVerification(requestData.challengeId);
+      const now = Math.floor(Date.now() / 1000);
+      if (!verification || verification.consumed_at || verification.expires_at < now) {
+        return res.status(400).json({ message: "Código inválido ou expirado. Solicite um novo código." });
+      }
+      if (verification.attempts >= 5) {
+        return res.status(429).json({ message: "Número máximo de tentativas atingido. Solicite um novo código." });
+      }
+
+      const expected = Buffer.from(verification.code_hash, "hex");
+      const received = Buffer.from(createDesmancheConfirmationCodeHash(verification.id, requestData.code), "hex");
+      if (expected.length !== received.length || !timingSafeEqual(expected, received)) {
+        storage.incrementDesmancheRegistrationVerificationAttempts(verification.id);
+        return res.status(400).json({ message: "Código inválido." });
+      }
+
+      const confirmationToken = jwt.sign(
+        {
+          purpose: "desmanche_registration",
+          verificationId: verification.id,
+          email: verification.email,
+          phone: verification.phone,
+        },
+        jwtSecret,
+        { expiresIn: "15m" },
+      );
+      res.json({ confirmationToken });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ message: "Código inválido" });
+      console.error("Confirm desmanche confirmation code error:", error);
+      res.status(500).json({ message: "Erro ao confirmar o código" });
+    }
+  });
+
   app.post("/api/auth/register-desmanche", async (req, res) => {
     try {
-      const desmancheData = schema.insertDesmancheSchema.parse(req.body);
+      const { confirmationToken, ...registrationData } = req.body ?? {};
+      if (typeof confirmationToken !== "string") {
+        return res.status(400).json({ message: "Confirme o código enviado antes de concluir o cadastro." });
+      }
+      let confirmation: { purpose?: string; verificationId?: string; email?: string; phone?: string };
+      try {
+        confirmation = jwt.verify(confirmationToken, jwtSecret) as typeof confirmation;
+      } catch {
+        return res.status(400).json({ message: "A confirmação expirou. Solicite um novo código." });
+      }
+      const parsedDesmancheData = schema.insertDesmancheSchema.parse(registrationData);
+      const desmancheData = {
+        ...parsedDesmancheData,
+        email: parsedDesmancheData.email.trim().toLowerCase(),
+      };
+      const phone = normalizeBrazilianPhone(desmancheData.phone);
+      if (
+        confirmation.purpose !== "desmanche_registration" ||
+        !confirmation.verificationId ||
+        confirmation.email !== desmancheData.email ||
+        !phone || confirmation.phone !== phone
+      ) {
+        return res.status(400).json({ message: "A confirmação não corresponde aos dados informados." });
+      }
       
       // Verifica se email ou CNPJ já existe
       const existingEmail = await storage.getDesmancheByEmail(desmancheData.email);
@@ -517,6 +633,10 @@ export async function registerRoutes(app: Express) {
         if (existingResponsibleCpf) {
           return res.status(400).json({ message: "CPF do responsável já cadastrado em outro desmanche." });
         }
+      }
+
+      if (!storage.consumeDesmancheRegistrationVerification(confirmation.verificationId)) {
+        return res.status(400).json({ message: "Esta confirmação já foi utilizada. Solicite um novo código." });
       }
       
       const desmanche = await storage.createDesmanche(desmancheData);
