@@ -539,6 +539,51 @@ sqlite.exec(`
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
   );
 `);
+
+// One-time recovery for the primary administrator account.  Deployment uses a
+// persistent SQLite database that is intentionally not committed to Git, so
+// this migration is the safe way to apply the requested credential reset to
+// the production database on the next release.
+const PRIMARY_ADMIN_EMAIL = "admin@centraldesmanches.com";
+const PRIMARY_ADMIN_PASSWORD_RECOVERY_MIGRATION = "2026-07-17-primary-admin-password-reset";
+const applyPrimaryAdminPasswordRecovery = sqlite.transaction(() => {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS application_migrations (
+      name TEXT PRIMARY KEY,
+      applied_at INTEGER NOT NULL
+    );
+  `);
+
+  const alreadyApplied = sqlite
+    .prepare("SELECT 1 FROM application_migrations WHERE name = ?")
+    .get(PRIMARY_ADMIN_PASSWORD_RECOVERY_MIGRATION);
+  if (alreadyApplied) return;
+
+  // This is a bcrypt hash, never the plaintext password.
+  const passwordHash = "$2b$10$A41lBHxTDNlSzfPjwpJvxe1YRjshmxhs.ib25PL.CFush0CEyXRyy";
+  const existingAdmin = sqlite
+    .prepare("SELECT id FROM users WHERE lower(email) = lower(?) AND type = 'admin'")
+    .get(PRIMARY_ADMIN_EMAIL) as { id: string } | undefined;
+
+  if (existingAdmin) {
+    sqlite.prepare(`
+      UPDATE users
+      SET password = ?, status = 'active', email_verified = 1,
+          password_reset_token = NULL, password_reset_expires = NULL
+      WHERE id = ?
+    `).run(passwordHash, existingAdmin.id);
+  } else {
+    sqlite.prepare(`
+      INSERT INTO users (id, name, email, phone, password, type, status, email_verified)
+      VALUES (?, ?, ?, ?, ?, 'admin', 'active', 1)
+    `).run(randomUUID(), "Administrador", PRIMARY_ADMIN_EMAIL, "", passwordHash);
+  }
+
+  sqlite.prepare("INSERT INTO application_migrations (name, applied_at) VALUES (?, ?)")
+    .run(PRIMARY_ADMIN_PASSWORD_RECOVERY_MIGRATION, Math.floor(Date.now() / 1000));
+});
+applyPrimaryAdminPasswordRecovery();
+
 try { sqlite.exec(`ALTER TABLE orders ADD COLUMN vehicle_type TEXT`); } catch (e) {}
 try { sqlite.exec(`ALTER TABLE orders ADD COLUMN vehicle_color TEXT`); } catch (e) {}
 try { sqlite.exec(`ALTER TABLE orders ADD COLUMN vehicle_engine TEXT`); } catch (e) {}
