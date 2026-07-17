@@ -51,7 +51,7 @@ test("cliente Asaas usa timeouts, preserva contratos e nunca faz retry", async (
     if (req.url.startsWith("/payments/")) return res.end(JSON.stringify({ status: "PENDING" }));
     if (req.url.startsWith("/subscriptions/") && req.url.includes("/payments")) {
       return res.end(JSON.stringify({
-        data: [{ id: "pay_subscription", status: "PENDING", invoiceUrl: "http://local/subscription-invoice" }],
+        data: [{ id: "pay_subscription", status: "PENDING", invoiceUrl: "http://local/subscription-invoice", externalReference: null }],
         hasMore: false,
       }));
     }

@@ -299,11 +299,13 @@ function validateListOptions(options: AsaasListOptions): Required<AsaasListOptio
 }
 
 function optionalString(value: unknown): string | undefined | null {
-  return value === undefined || typeof value === "string" ? value : null;
+  // Asaas returns null for optional fields such as externalReference. Treat it
+  // as absent so an otherwise valid payment is not discarded.
+  return value === undefined || value === null ? undefined : typeof value === "string" ? value : null;
 }
 
 function optionalNumber(value: unknown): number | undefined | null {
-  return value === undefined || (typeof value === "number" && Number.isFinite(value)) ? value : null;
+  return value === undefined || value === null ? undefined : (typeof value === "number" && Number.isFinite(value)) ? value : null;
 }
 
 function parseListPage<T>(raw: unknown, parseItem: (value: unknown) => T | null): AsaasListPage<T> | null {
