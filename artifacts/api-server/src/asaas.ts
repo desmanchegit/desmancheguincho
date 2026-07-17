@@ -434,7 +434,7 @@ export async function createAsaasSubscription(data: {
   billingType: "BOLETO" | "PIX" | "UNDEFINED";
   cycle: "MONTHLY" | "YEARLY";
   externalReference?: string;
-}): Promise<{ id: string; paymentLink?: string; invoiceUrl?: string; status: string } | null> {
+}): Promise<{ id: string; status: string } | null> {
   if (data.externalReference !== undefined) assertAsaasExternalReference(data.externalReference);
   if (!isAsaasConfigured()) return null;
   try {
@@ -458,19 +458,47 @@ export async function createAsaasSubscription(data: {
     const subscription = response as Record<string, unknown>;
     if (typeof subscription.id !== "string" || !subscription.id) return null;
 
-    // The subscription API exposes the checkout URL as `paymentLink`.
-    // `invoiceUrl` is kept as a backwards-compatible fallback for older
-    // responses, but it is normally only present on individual payments.
     return {
       id: subscription.id,
-      ...(typeof subscription.paymentLink === "string" && subscription.paymentLink
-        ? { paymentLink: subscription.paymentLink }
-        : {}),
-      ...(typeof subscription.invoiceUrl === "string" && subscription.invoiceUrl
-        ? { invoiceUrl: subscription.invoiceUrl }
-        : {}),
       status: typeof subscription.status === "string" ? subscription.status : "",
     };
+  } catch {
+    return null;
+  }
+}
+
+function paymentCheckoutUrl(payment: AsaasPaymentListItem): string | null {
+  return payment.invoiceUrl || payment.bankSlipUrl || null;
+}
+
+/**
+ * An Asaas subscription schedules its charges instead of returning the first
+ * charge in the subscription response. Fetching the generated charges is
+ * therefore required before redirecting a customer to pay the first cycle.
+ */
+export async function getAsaasSubscriptionPaymentLink(subscriptionId: string): Promise<string | null> {
+  if (!isAsaasConfigured()) return null;
+  try {
+    const res = await asaasFetch("list subscriptions", `/subscriptions/${encodeURIComponent(subscriptionId)}/payments?limit=10`, 8_000);
+    if (!res.ok) return null;
+    const raw: unknown = await res.json();
+    const page = parseListPage(raw, parsePaymentListItem);
+    if (!page) return null;
+
+    const pending = page.data.find((payment) => payment.status === "PENDING" && paymentCheckoutUrl(payment));
+    return pending ? paymentCheckoutUrl(pending) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getAsaasChargePaymentLink(chargeId: string): Promise<string | null> {
+  if (!isAsaasConfigured()) return null;
+  try {
+    const res = await asaasFetch("get charge", "/payments/" + encodeURIComponent(chargeId), 8_000);
+    if (!res.ok) return null;
+    const payment = parseAsaasPayment(await res.json(), false);
+    return payment ? paymentCheckoutUrl(payment) : null;
   } catch {
     return null;
   }

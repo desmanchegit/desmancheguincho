@@ -30,6 +30,15 @@ function sendAsaasCustomerOutcome(res: Response, result: Exclude<EnsureAsaasCust
   }
 }
 
+async function waitForAsaasSubscriptionPaymentUrl(subscriptionId: string): Promise<string | null> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const paymentUrl = await asaas.getAsaasSubscriptionPaymentLink(subscriptionId);
+    if (paymentUrl) return paymentUrl;
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return null;
+}
+
 const uploadStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, publicUploadsDir),
   filename: (_req, file, cb) => {
@@ -3631,9 +3640,7 @@ export async function registerRoutes(app: Express) {
                   asaasSubscriptionId: subscription.id,
                   plan: "monthly",
                 });
-                // Subscriptions use `paymentLink`; `invoiceUrl` belongs to an
-                // individual charge and is only a fallback for legacy replies.
-                paymentUrl = subscription.paymentLink ?? subscription.invoiceUrl ?? null;
+                paymentUrl = await waitForAsaasSubscriptionPaymentUrl(subscription.id);
               }
             } else {
               const charge = await asaas.createAsaasCharge({
@@ -3667,10 +3674,11 @@ export async function registerRoutes(app: Express) {
         jwtSecret,
         { expiresIn: "7d" }
       );
-      res.status(customerOutcome || customerServiceUnavailable ? 202 : 201).json({
+      const billingStillProcessing = customerOutcome || customerServiceUnavailable || !paymentUrl;
+      res.status(billingStillProcessing ? 202 : 201).json({
         token,
         paymentUrl,
-        ...(customerOutcome || customerServiceUnavailable ? { billing: "processing" } : {}),
+        ...(billingStillProcessing ? { billing: "processing" } : {}),
         user: {
           id: guincho.id,
           name: guincho.trading_name,
@@ -3686,6 +3694,34 @@ export async function registerRoutes(app: Express) {
       }
       console.error("Register guincho error:", error);
       res.status(500).json({ message: "Erro no cadastro" });
+    }
+  });
+
+  // Returns an existing pending payment link without creating a new charge.
+  // This lets the registration screen retry safely while Asaas finishes
+  // generating the first charge for a subscription.
+  app.get("/api/guinchos/me/payment-link", authMiddleware, requireType(["guincho"]), async (req, res) => {
+    try {
+      if (!asaas.isAsaasConfigured()) {
+        return res.status(503).json({ message: "Sistema de pagamento indisponível" });
+      }
+
+      const guincho = storage.getGuinchoById((req as any).user.id);
+      if (!guincho) return res.status(404).json({ message: "Guincho não encontrado" });
+
+      const paymentUrl = guincho.asaas_subscription_id
+        ? await asaas.getAsaasSubscriptionPaymentLink(guincho.asaas_subscription_id)
+        : guincho.asaas_payment_id
+          ? await asaas.getAsaasChargePaymentLink(guincho.asaas_payment_id)
+          : null;
+
+      if (!paymentUrl) {
+        return res.status(202).json({ billing: "processing", message: "A cobrança ainda está sendo preparada." });
+      }
+      res.json({ paymentUrl });
+    } catch (error) {
+      req.log.error({ error }, "Could not retrieve guincho payment link");
+      res.status(503).json({ message: "Não foi possível recuperar a cobrança agora." });
     }
   });
 

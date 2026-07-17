@@ -565,7 +565,8 @@ test("cadastro de guincho não compartilha a cota de tentativas entre e-mails no
         plan: "annual",
       }),
     });
-    assert.equal(response.status, 201);
+    assert.equal(response.status, 202);
+    assert.equal((await response.json()).billing, "processing");
   }
 });
 

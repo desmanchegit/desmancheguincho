@@ -36,7 +36,7 @@ function maskCpf(v: string) {
     .replace(/(\d{3})(\d)/, "$1-$2");
 }
 
-type Step = "form" | "plan" | "payment" | "success";
+type Step = "form" | "plan" | "payment" | "payment_pending" | "success";
 type Plan = "annual" | "monthly";
 
 export default function CadastroGuincho() {
@@ -198,10 +198,32 @@ export default function CadastroGuincho() {
         setPaymentUrl(data.paymentUrl);
         setStep("payment");
       } else {
-        setStep("success");
+        setStep("payment_pending");
       }
     } catch (err: any) {
       toast({ title: err.message || "Erro no cadastro", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function retryPaymentLink() {
+    setIsLoading(true);
+    try {
+      const token = localStorage.getItem(GUINCHO_TOKEN_KEY);
+      const res = await fetch("/api/guinchos/me/payment-link", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json();
+      if (data.paymentUrl) {
+        setPaymentUrl(data.paymentUrl);
+        setStep("payment");
+        return;
+      }
+      if (!res.ok && res.status !== 202) throw new Error(data.message || "Erro ao preparar cobrança");
+      toast({ title: "Cobrança em preparação", description: "Aguarde alguns instantes e tente novamente." });
+    } catch (err: any) {
+      toast({ title: err.message || "Erro ao preparar cobrança", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -351,6 +373,28 @@ export default function CadastroGuincho() {
           >
             Pagar depois
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "payment_pending") {
+    return (
+      <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
+        <div className="bg-card border rounded-2xl p-8 max-w-md w-full space-y-6 shadow-lg text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10">
+            <Clock className="h-8 w-8 text-primary" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold">Preparando seu pagamento</h2>
+            <p className="text-muted-foreground text-sm">
+              Seu cadastro foi criado, mas a cobrança ainda está sendo gerada. O anúncio só será ativado após a confirmação do pagamento.
+            </p>
+          </div>
+          <Button className="w-full gap-2" size="lg" onClick={retryPaymentLink} disabled={isLoading}>
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Verificar pagamento
+          </Button>
         </div>
       </div>
     );
