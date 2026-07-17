@@ -334,10 +334,10 @@ export default function DesmanchesTab({ onSelectDesmanche }: { onSelectDesmanche
                         )}
                       </TableCell>
                       <TableCell className="text-right pr-6">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 mr-1 text-muted-foreground hover:text-destructive" title="Excluir desmanche"
+                        <Button variant="ghost" size="sm" className="h-8 mr-1 text-destructive hover:text-destructive" title="Excluir desmanche"
                           onClick={(event) => { event.stopPropagation(); setDeleteTarget(d); }} disabled={deleteMutation.isPending}
                           data-testid={`button-delete-desmanche-${d.id}`}>
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-4 w-4 mr-1" /> Excluir
                         </Button>
                         <ChevronRight className="h-4 w-4 text-muted-foreground inline" />
                       </TableCell>

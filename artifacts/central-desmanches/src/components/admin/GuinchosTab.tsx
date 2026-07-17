@@ -260,18 +260,16 @@ export default function GuinchosTab() {
                 Reenviar para análise
               </Button>
             )}
-            {selected.status !== "active" && (
-              <Button
-                variant="outline"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={() => setDeleteTarget(selected)}
-                disabled={updateStatus.isPending || deleteGuincho.isPending}
-                data-testid={`button-delete-guincho-${selected.id}`}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Excluir cadastro
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => setDeleteTarget(selected)}
+              disabled={updateStatus.isPending || deleteGuincho.isPending}
+              data-testid={`button-delete-guincho-${selected.id}`}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Excluir cadastro
+            </Button>
           </div>
         </div>
         <DeleteGuinchoDialog target={deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={() => {
@@ -336,33 +334,22 @@ export default function GuinchosTab() {
       ) : (
         <div className="space-y-2">
           {guinchos.map((g) => (
-            <button
+            <div
               key={g.id}
-              onClick={() => setSelected(g)}
-              className="w-full text-left bg-card border rounded-xl p-4 flex items-center gap-4 hover:bg-muted/50 transition-colors group"
+              className="w-full bg-card border rounded-xl p-2 flex items-center gap-2 hover:bg-muted/50 transition-colors group"
             >
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                <Truck className="h-5 w-5 text-primary" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-medium truncate">{g.trading_name}</p>
-                  <Badge variant={STATUS_VARIANTS[g.status] ?? "outline"} className="text-xs shrink-0">
-                    {STATUS_LABELS[g.status] ?? g.status}
-                  </Badge>
+              <button onClick={() => setSelected(g)} className="flex-1 min-w-0 text-left p-2 flex items-center gap-4">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <Truck className="h-5 w-5 text-primary" />
                 </div>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5 flex-wrap">
-                  <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{g.city} – {g.state}</span>
-                  <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{g.phone}</span>
-                  <span>
-                    {g.document_type === "cpf"
-                      ? (g.cpf ? formatCpf(g.cpf) : "—")
-                      : (g.cnpj ? formatCnpj(g.cnpj) : "—")}
-                  </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap"><p className="font-medium truncate">{g.trading_name}</p><Badge variant={STATUS_VARIANTS[g.status] ?? "outline"} className="text-xs shrink-0">{STATUS_LABELS[g.status] ?? g.status}</Badge></div>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5 flex-wrap"><span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{g.city} – {g.state}</span><span className="flex items-center gap-1"><Phone className="h-3 w-3" />{g.phone}</span><span>{g.document_type === "cpf" ? (g.cpf ? formatCpf(g.cpf) : "—") : (g.cnpj ? formatCnpj(g.cnpj) : "—")}</span></div>
                 </div>
-              </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 group-hover:text-foreground transition-colors" />
-            </button>
+                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 group-hover:text-foreground transition-colors" />
+              </button>
+              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(g)} disabled={deleteGuincho.isPending} data-testid={`button-delete-guincho-row-${g.id}`}><Trash2 className="h-4 w-4" /><span className="sr-only">Excluir guincho</span></Button>
+            </div>
           ))}
         </div>
       )}
@@ -387,7 +374,7 @@ function DeleteGuinchoDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Excluir cadastro de guincho?</AlertDialogTitle>
           <AlertDialogDescription>
-            O cadastro de <strong>{target?.trading_name}</strong> será removido permanentemente. A exclusão só é permitida quando o guincho não está ativo e não possui cobrança ou assinatura vinculada.
+            O cadastro de <strong>{target?.trading_name}</strong> será removido permanentemente somente se não houver atividade ou cobrança vinculada. Caso exista algum impedimento, o sistema informará antes de excluir.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
