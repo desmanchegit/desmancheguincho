@@ -8,21 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
   Loader2, Settings, Clock, DollarSign, AlertTriangle,
-  Zap, CheckCircle2, Eye, EyeOff, ExternalLink, ShieldAlert, Trash2,
+  Zap, CheckCircle2, Eye, EyeOff, ExternalLink, ShieldAlert,
 } from "lucide-react";
-
-const PRESERVED_ADMIN_EMAIL = "admin@centraldesmanches.com";
 
 interface SystemSettings {
   reviewDeadlineDays: string;
@@ -49,8 +37,6 @@ export default function SettingsTab() {
     asaasEnvironment: "sandbox",
   });
   const [showKey, setShowKey] = useState(false);
-  const [isCleanupDialogOpen, setIsCleanupDialogOpen] = useState(false);
-  const [cleanupConfirmation, setCleanupConfirmation] = useState("");
 
   const { data: settings, isLoading } = useQuery<SystemSettings>({
     queryKey: ["/api/admin/settings"],
@@ -74,27 +60,6 @@ export default function SettingsTab() {
       toast({ title: "Configurações salvas com sucesso!" });
     },
     onError: () => toast({ title: "Erro ao salvar configurações", variant: "destructive" }),
-  });
-
-  const clearTestDataMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/admin/clear-test-data", {
-        confirmationEmail: cleanupConfirmation,
-      });
-      return res.json() as Promise<{ deletedRecords: number }>;
-    },
-    onSuccess: (data) => {
-      setIsCleanupDialogOpen(false);
-      setCleanupConfirmation("");
-      qc.invalidateQueries();
-      toast({
-        title: "Dados de teste removidos",
-        description: `${data.deletedRecords} registro(s) foram removidos. A conta administrativa foi preservada.`,
-      });
-    },
-    onError: (error: Error) => {
-      toast({ title: error.message || "Erro ao limpar os dados de teste", variant: "destructive" });
-    },
   });
 
   const f = (key: keyof SystemSettings) => ({
@@ -359,31 +324,6 @@ export default function SettingsTab() {
               </CardContent>
             </Card>
           </div>
-
-          <Card className="border-destructive/40 shadow-sm">
-            <CardHeader>
-              <CardTitle className="font-mono text-base flex items-center gap-2 text-destructive">
-                <Trash2 className="h-4 w-4" /> Zona de perigo
-              </CardTitle>
-              <CardDescription>
-                Remova todos os cadastros, pedidos, negociações, mensagens, cobranças e demais dados de teste.
-                As configurações do sistema e os planos são mantidos.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-slate-600">
-                Será preservada somente a conta <strong>{PRESERVED_ADMIN_EMAIL}</strong>. Esta ação não cancela cobranças no Asaas.
-              </p>
-              <Button
-                type="button"
-                variant="destructive"
-                className="shrink-0 gap-2"
-                onClick={() => setIsCleanupDialogOpen(true)}
-              >
-                <Trash2 className="h-4 w-4" /> Limpar dados de teste
-              </Button>
-            </CardContent>
-          </Card>
         </div>
       )}
 
@@ -397,48 +337,6 @@ export default function SettingsTab() {
           Salvar Configurações
         </Button>
       </div>
-
-      <AlertDialog
-        open={isCleanupDialogOpen}
-        onOpenChange={(open) => {
-          setIsCleanupDialogOpen(open);
-          if (!open && !clearTestDataMutation.isPending) setCleanupConfirmation("");
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Limpar todos os dados de teste?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta ação é permanente no banco local. Apenas a conta administrativa informada será mantida.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="cleanup-confirmation">Para confirmar, digite {PRESERVED_ADMIN_EMAIL}</Label>
-            <Input
-              id="cleanup-confirmation"
-              value={cleanupConfirmation}
-              onChange={(event) => setCleanupConfirmation(event.target.value)}
-              placeholder={PRESERVED_ADMIN_EMAIL}
-              autoComplete="off"
-              disabled={clearTestDataMutation.isPending}
-            />
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={clearTestDataMutation.isPending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={cleanupConfirmation.trim().toLowerCase() !== PRESERVED_ADMIN_EMAIL || clearTestDataMutation.isPending}
-              onClick={(event) => {
-                event.preventDefault();
-                clearTestDataMutation.mutate();
-              }}
-            >
-              {clearTestDataMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Excluir dados permanentemente
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
