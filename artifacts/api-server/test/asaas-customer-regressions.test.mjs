@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import net from "node:net";
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -12,6 +13,22 @@ import { hashAsaasCreationParameters } from "../dist/asaas-idempotency.mjs";
 
 const apiDir = path.resolve(import.meta.dirname, "..");
 const jwtSecret = "12345678901234567890123456789012";
+
+function createGuinchoConfirmationToken(filename, email, phone = "11999999999") {
+  const verificationId = randomBytes(24).toString("hex");
+  const sqlite = new Database(filename);
+  sqlite.prepare(`
+    INSERT INTO desmanche_registration_verifications
+      (id, purpose, channel, email, phone, code_hash, expires_at)
+    VALUES (?, 'guincho_registration', 'email', ?, ?, 'test-code-hash', ?)
+  `).run(verificationId, email, `+55${phone}`, Math.floor(Date.now() / 1000) + 600);
+  sqlite.close();
+  return jwt.sign(
+    { purpose: "guincho_registration", verificationId, email, phone: `+55${phone}` },
+    jwtSecret,
+    { expiresIn: "15m" },
+  );
+}
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -525,6 +542,7 @@ test("cadastro de guincho persiste planos anual e mensal quando o cliente fica a
         name: `Guincho ${plan}`, tradingName: `Guincho ${plan}`, documentType: "cpf", cpf: plan === "annual" ? "12345678901" : "12345678902",
         email: `${plan}@guincho.example.test`, phone: "11999999999", whatsapp: "11999999999", password: "secret1",
         zipCode: "01001000", street: "Rua Teste", city: "São Paulo", state: "SP", plan,
+        confirmationToken: createGuinchoConfirmationToken(filename, `${plan}@guincho.example.test`),
       }),
     });
     assert.equal(response.status, 202);
@@ -540,7 +558,7 @@ test("cadastro de guincho persiste planos anual e mensal quando o cliente fica a
 });
 
 test("cadastro de guincho não compartilha a cota de tentativas entre e-mails no mesmo proxy", async (t) => {
-  const { endpoint } = await startServer(t, (_req, res) => {
+  const { endpoint, filename } = await startServer(t, (_req, res) => {
     res.writeHead(404);
     res.end();
   }, { asaasConfigured: false });
@@ -563,6 +581,7 @@ test("cadastro de guincho não compartilha a cota de tentativas entre e-mails no
         city: "São Paulo",
         state: "SP",
         plan: "annual",
+        confirmationToken: createGuinchoConfirmationToken(filename, `guincho-${index}@example.test`),
       }),
     });
     assert.equal(response.status, 202);

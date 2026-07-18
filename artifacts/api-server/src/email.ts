@@ -47,13 +47,17 @@ export async function sendVerificationEmail(to: string, token: string) {
 }
 
 export async function sendDesmancheRegistrationCode(to: string, code: string) {
+  await sendRegistrationCode(to, code, "do seu desmanche");
+}
+
+export async function sendRegistrationCode(to: string, code: string, accountDescription: string) {
   await sendMail(
     to,
     "Código de confirmação — Central dos Desmanches",
     `
     <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;background:#f8fafc;border-radius:12px;">
       <h2 style="color:#1e293b;margin-bottom:8px;">Confirme seu cadastro</h2>
-      <p style="color:#475569;">Use o código abaixo para confirmar o cadastro do seu desmanche.</p>
+      <p style="color:#475569;">Use o código abaixo para confirmar o cadastro ${accountDescription}.</p>
       <p style="margin:24px 0;padding:16px;background:#fff;border-radius:8px;text-align:center;font-size:30px;font-weight:700;letter-spacing:8px;color:#ea580c;">${code}</p>
       <p style="color:#94a3b8;font-size:13px;">O código expira em 10 minutos. Não o compartilhe com ninguém.</p>
     </div>

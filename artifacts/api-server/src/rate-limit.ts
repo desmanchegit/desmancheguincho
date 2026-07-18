@@ -78,6 +78,8 @@ const desmancheRegistrationLimiter = createRegistrationLimiter(minutes(60), 3);
 const desmancheVerificationSendLimiter = createRegistrationLimiter(minutes(60), 3);
 const desmancheVerificationConfirmLimiter = createLimiter(minutes(15), 10);
 const guinchoRegistrationLimiter = createRegistrationLimiter(minutes(60), 3);
+const registrationVerificationSendLimiter = createRegistrationLimiter(minutes(60), 5);
+const registrationVerificationConfirmLimiter = createLimiter(minutes(15), 10);
 const cnpjValidationLimiter = createLimiter(minutes(10), 10);
 const uploadLimiter = createLimiter(minutes(15), 20);
 
@@ -108,6 +110,8 @@ export function routeLimiters(
   if (req.method === "POST" && path === "/api/auth/register-desmanche") return desmancheRegistrationLimiter(req, res, next);
   if (req.method === "POST" && path === "/api/auth/desmanche-registration/send-code") return desmancheVerificationSendLimiter(req, res, next);
   if (req.method === "POST" && path === "/api/auth/desmanche-registration/confirm-code") return desmancheVerificationConfirmLimiter(req, res, next);
+  if (req.method === "POST" && path === "/api/auth/registration/send-code") return registrationVerificationSendLimiter(req, res, next);
+  if (req.method === "POST" && path === "/api/auth/registration/confirm-code") return registrationVerificationConfirmLimiter(req, res, next);
   if (req.method === "POST" && path === "/api/guinchos/register") return guinchoRegistrationLimiter(req, res, next);
   if (req.method === "POST" && path === "/api/guinchos/validate-cnpj") return cnpjValidationLimiter(req, res, next);
   if (req.method === "POST" && (uploadPaths.has(path) || /^\/api\/orders\/[^/]+\/images$/.test(path))) return uploadLimiter(req, res, next);

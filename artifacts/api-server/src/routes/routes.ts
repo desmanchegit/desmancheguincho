@@ -236,6 +236,7 @@ function requireType(types: string[]) {
 }
 
 const desmancheConfirmationChannels = ["email", "sms", "whatsapp"] as const;
+const emailRegistrationPurposes = ["client_registration", "guincho_registration"] as const;
 
 function normalizeBrazilianPhone(value: string): string | null {
   const digits = value.replace(/\D/g, "");
@@ -245,7 +246,7 @@ function normalizeBrazilianPhone(value: string): string | null {
   return /^55\d{10,11}$/.test(nationalNumber) ? `+${nationalNumber}` : null;
 }
 
-function createDesmancheConfirmationCodeHash(challengeId: string, code: string) {
+function createRegistrationConfirmationCodeHash(challengeId: string, code: string) {
   return createHash("sha256").update(`${jwtSecret}:${challengeId}:${code}`).digest("hex");
 }
 
@@ -376,10 +377,30 @@ export async function registerRoutes(app: Express) {
   // Registro de cliente
   app.post("/api/auth/register", async (req, res) => {
     try {
-      const userData = schema.insertUserSchema.parse(req.body);
+      const { confirmationToken, ...registrationData } = req.body ?? {};
+      if (typeof confirmationToken !== "string") {
+        return res.status(400).json({ message: "Confirme o código enviado antes de concluir o cadastro." });
+      }
+      let confirmation: { purpose?: string; verificationId?: string; email?: string; phone?: string };
+      try {
+        confirmation = jwt.verify(confirmationToken, jwtSecret) as typeof confirmation;
+      } catch {
+        return res.status(400).json({ message: "A confirmação expirou. Solicite um novo código." });
+      }
+      const userData = schema.insertUserSchema.parse(registrationData);
+      const normalizedEmail = userData.email.trim().toLowerCase();
+      const phone = normalizeBrazilianPhone(userData.phone);
+      if (
+        confirmation.purpose !== "client_registration" ||
+        !confirmation.verificationId ||
+        confirmation.email !== normalizedEmail ||
+        !phone || confirmation.phone !== phone
+      ) {
+        return res.status(400).json({ message: "A confirmação não corresponde aos dados informados." });
+      }
       
       // Verifica se email já existe
-      const existingUser = await storage.getUserByEmail(userData.email);
+      const existingUser = await storage.getUserByEmail(normalizedEmail);
       if (existingUser) {
         return res.status(400).json({ message: "Email já cadastrado" });
       }
@@ -392,7 +413,11 @@ export async function registerRoutes(app: Express) {
         }
       }
       
-      const user = await storage.createUser(userData);
+      if (!storage.consumeDesmancheRegistrationVerification(confirmation.verificationId)) {
+        return res.status(400).json({ message: "Esta confirmação já foi utilizada. Solicite um novo código." });
+      }
+
+      const user = await storage.createUser({ ...userData, email: normalizedEmail });
 
       storage.logActivity({
         action: "client_registered",
@@ -404,11 +429,8 @@ export async function registerRoutes(app: Express) {
         description: `Novo cliente cadastrado: ${user!.name} (${user!.email})`,
       });
       
-      // Send verification email + welcome email
-      const verifyToken = randomBytes(32).toString("hex");
-      const verifyExpires = Math.floor(Date.now() / 1000) + 86400; // 24h
-      storage.setEmailVerificationToken(user!.id, verifyToken, verifyExpires);
-      email.sendVerificationEmail(user!.email, verifyToken).catch(err => console.error("Email error:", err));
+      // The registration code already proves the e-mail address.
+      storage.markEmailVerified(user!.id);
       email.sendWelcomeClientEmail(user!.email, user!.name).catch(err => console.error("Welcome email error:", err));
       
       const token = jwt.sign(
@@ -425,7 +447,7 @@ export async function registerRoutes(app: Express) {
           email: user!.email,
           phone: user!.phone,
           type: user!.type,
-          emailVerified: false,
+          emailVerified: true,
         },
       });
     } catch (error) {
@@ -519,6 +541,79 @@ export async function registerRoutes(app: Express) {
   });
 
   // Registro de desmanche
+  app.post("/api/auth/registration/send-code", async (req, res) => {
+    try {
+      const requestData = z.object({
+        email: z.string().trim().email(),
+        phone: z.string().trim().min(1),
+        purpose: z.enum(emailRegistrationPurposes),
+      }).parse(req.body);
+      const emailAddress = requestData.email.toLowerCase();
+      const phone = normalizeBrazilianPhone(requestData.phone);
+      if (!phone) return res.status(400).json({ message: "Informe um telefone brasileiro válido com DDD." });
+
+      const exists = requestData.purpose === "client_registration"
+        ? await storage.getUserByEmail(emailAddress)
+        : storage.getGuinchoByEmail(emailAddress);
+      if (exists) return res.status(400).json({ message: "E-mail já cadastrado" });
+
+      const challengeId = randomBytes(24).toString("hex");
+      const code = String(randomInt(100000, 1_000_000));
+      storage.createDesmancheRegistrationVerification({
+        id: challengeId,
+        purpose: requestData.purpose,
+        channel: "email",
+        email: emailAddress,
+        phone,
+        codeHash: createRegistrationConfirmationCodeHash(challengeId, code),
+        expiresAt: Math.floor(Date.now() / 1000) + 600,
+      });
+      await email.sendRegistrationCode(
+        emailAddress,
+        code,
+        requestData.purpose === "client_registration" ? "da sua conta" : "do seu guincho",
+      );
+      res.status(201).json({ challengeId, expiresIn: 600 });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ message: "Dados inválidos", errors: error.issues });
+      console.error("Send registration confirmation code error:", error);
+      res.status(500).json({ message: "Erro ao enviar o código" });
+    }
+  });
+
+  app.post("/api/auth/registration/confirm-code", async (req, res) => {
+    try {
+      const requestData = z.object({
+        challengeId: z.string().regex(/^[a-f0-9]{48}$/),
+        code: z.string().regex(/^\d{6}$/),
+      }).parse(req.body);
+      const verification = storage.getDesmancheRegistrationVerification(requestData.challengeId);
+      const now = Math.floor(Date.now() / 1000);
+      if (!verification || !emailRegistrationPurposes.includes(verification.purpose) || verification.consumed_at || verification.expires_at < now) {
+        return res.status(400).json({ message: "Código inválido ou expirado. Solicite um novo código." });
+      }
+      if (verification.attempts >= 5) {
+        return res.status(429).json({ message: "Número máximo de tentativas atingido. Solicite um novo código." });
+      }
+      const expected = Buffer.from(verification.code_hash, "hex");
+      const received = Buffer.from(createRegistrationConfirmationCodeHash(verification.id, requestData.code), "hex");
+      if (expected.length !== received.length || !timingSafeEqual(expected, received)) {
+        storage.incrementDesmancheRegistrationVerificationAttempts(verification.id);
+        return res.status(400).json({ message: "Código inválido." });
+      }
+      const confirmationToken = jwt.sign(
+        { purpose: verification.purpose, verificationId: verification.id, email: verification.email, phone: verification.phone },
+        jwtSecret,
+        { expiresIn: "15m" },
+      );
+      res.json({ confirmationToken });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ message: "Código inválido" });
+      console.error("Confirm registration confirmation code error:", error);
+      res.status(500).json({ message: "Erro ao confirmar o código" });
+    }
+  });
+
   app.post("/api/auth/desmanche-registration/send-code", async (req, res) => {
     try {
       const requestData = z.object({
@@ -537,10 +632,11 @@ export async function registerRoutes(app: Express) {
       const code = String(randomInt(100000, 1_000_000));
       storage.createDesmancheRegistrationVerification({
         id: challengeId,
+        purpose: "desmanche_registration",
         channel: requestData.channel,
         email: emailAddress,
         phone,
-        codeHash: createDesmancheConfirmationCodeHash(challengeId, code),
+        codeHash: createRegistrationConfirmationCodeHash(challengeId, code),
         expiresAt: Math.floor(Date.now() / 1000) + 600,
       });
 
@@ -566,7 +662,7 @@ export async function registerRoutes(app: Express) {
       }).parse(req.body);
       const verification = storage.getDesmancheRegistrationVerification(requestData.challengeId);
       const now = Math.floor(Date.now() / 1000);
-      if (!verification || verification.consumed_at || verification.expires_at < now) {
+      if (!verification || verification.purpose !== "desmanche_registration" || verification.consumed_at || verification.expires_at < now) {
         return res.status(400).json({ message: "Código inválido ou expirado. Solicite um novo código." });
       }
       if (verification.attempts >= 5) {
@@ -574,7 +670,7 @@ export async function registerRoutes(app: Express) {
       }
 
       const expected = Buffer.from(verification.code_hash, "hex");
-      const received = Buffer.from(createDesmancheConfirmationCodeHash(verification.id, requestData.code), "hex");
+      const received = Buffer.from(createRegistrationConfirmationCodeHash(verification.id, requestData.code), "hex");
       if (expected.length !== received.length || !timingSafeEqual(expected, received)) {
         storage.incrementDesmancheRegistrationVerificationAttempts(verification.id);
         return res.status(400).json({ message: "Código inválido." });
@@ -3578,8 +3674,28 @@ export async function registerRoutes(app: Express) {
   // Public: register a guincho
   app.post("/api/guinchos/register", async (req, res) => {
     try {
-      const data = schema.insertGuinchoSchema.parse(req.body);
-      const existingEmail = storage.getGuinchoByEmail(data.email);
+      const { confirmationToken, ...registrationData } = req.body ?? {};
+      if (typeof confirmationToken !== "string") {
+        return res.status(400).json({ message: "Confirme o código enviado antes de concluir o cadastro." });
+      }
+      let confirmation: { purpose?: string; verificationId?: string; email?: string; phone?: string };
+      try {
+        confirmation = jwt.verify(confirmationToken, jwtSecret) as typeof confirmation;
+      } catch {
+        return res.status(400).json({ message: "A confirmação expirou. Solicite um novo código." });
+      }
+      const data = schema.insertGuinchoSchema.parse(registrationData);
+      const normalizedEmail = data.email.trim().toLowerCase();
+      const phone = normalizeBrazilianPhone(data.phone);
+      if (
+        confirmation.purpose !== "guincho_registration" ||
+        !confirmation.verificationId ||
+        confirmation.email !== normalizedEmail ||
+        !phone || confirmation.phone !== phone
+      ) {
+        return res.status(400).json({ message: "A confirmação não corresponde aos dados informados." });
+      }
+      const existingEmail = storage.getGuinchoByEmail(normalizedEmail);
       if (existingEmail) {
         return res.status(400).json({ message: "E-mail já cadastrado" });
       }
@@ -3621,8 +3737,11 @@ export async function registerRoutes(app: Express) {
         }
       }
       const plan: "annual" | "monthly" = req.body.plan === "monthly" ? "monthly" : "annual";
+      if (!storage.consumeDesmancheRegistrationVerification(confirmation.verificationId)) {
+        return res.status(400).json({ message: "Esta confirmação já foi utilizada. Solicite um novo código." });
+      }
       // Persist the requested commercial plan before any provider call.
-      const guincho = await storage.createGuincho({ ...data, plan });
+      const guincho = await storage.createGuincho({ ...data, email: normalizedEmail, plan });
       storage.logActivity({
         action: "guincho_registered",
         actorType: "system",

@@ -53,6 +53,7 @@ interface RegisterData {
   phone: string;
   cpf?: string;
   password: string;
+  confirmationToken: string;
 }
 
 interface RegisterDesmancheData {

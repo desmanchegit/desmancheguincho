@@ -130,11 +130,16 @@ export function RegisterModal({ children, defaultOpen = false }: RegisterModalPr
   const [error, setError] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [confirmationChallengeId, setConfirmationChallengeId] = useState<string | null>(null);
+  const [confirmationCode, setConfirmationCode] = useState("");
+  const [isSendingConfirmation, setIsSendingConfirmation] = useState(false);
 
   const strength = useMemo(() => getStrength(form.password), [form.password]);
   const passwordsMatch = form.confirmPassword === "" || form.password === form.confirmPassword;
   const isStrong = strength >= 3; // at least "Razoável" to submit
-  const canSubmit = !isLoading && isStrong && form.password === form.confirmPassword && form.confirmPassword.length > 0 && acceptedTerms;
+  const canSubmit = confirmationChallengeId
+    ? !isLoading && !isSendingConfirmation && /^\d{6}$/.test(confirmationCode)
+    : !isLoading && !isSendingConfirmation && isStrong && form.password === form.confirmPassword && form.confirmPassword.length > 0 && acceptedTerms;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,17 +155,42 @@ export function RegisterModal({ children, defaultOpen = false }: RegisterModalPr
     }
 
     try {
+      if (!confirmationChallengeId) {
+        setIsSendingConfirmation(true);
+        const response = await fetch("/api/auth/registration/send-code", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: form.email, phone: form.phone, purpose: "client_registration" }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message || "Não foi possível enviar o código.");
+        setConfirmationChallengeId(result.challengeId);
+        setConfirmationCode("");
+        return;
+      }
+
+      setIsSendingConfirmation(true);
+      const confirmationResponse = await fetch("/api/auth/registration/confirm-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeId: confirmationChallengeId, code: confirmationCode }),
+      });
+      const confirmation = await confirmationResponse.json();
+      if (!confirmationResponse.ok) throw new Error(confirmation.message || "Código inválido.");
       await register({
         name: form.name,
         email: form.email,
         phone: form.phone,
         cpf: form.cpf || undefined,
         password: form.password,
+        confirmationToken: confirmation.confirmationToken,
       });
       setOpen(false);
       navigate("/cliente");
-    } catch {
-      // error handled by useAuth toast
+    } catch (err: any) {
+      setError(err?.message || "Não foi possível concluir o cadastro.");
+    } finally {
+      setIsSendingConfirmation(false);
     }
   };
 
@@ -169,13 +199,44 @@ export function RegisterModal({ children, defaultOpen = false }: RegisterModalPr
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="sm:max-w-[440px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Criar conta de Cliente</DialogTitle>
+          <DialogTitle>{confirmationChallengeId ? "Confirme seu e-mail" : "Criar conta de Cliente"}</DialogTitle>
           <DialogDescription>
-            Cadastre-se para buscar peças e negociar com desmanches credenciados.
+            {confirmationChallengeId
+              ? `Enviamos um código de seis dígitos para ${form.email}. Ele expira em 10 minutos.`
+              : "Cadastre-se para buscar peças e negociar com desmanches credenciados."}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          {confirmationChallengeId ? (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="reg-confirmation-code">Código de confirmação</Label>
+                <Input
+                  id="reg-confirmation-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="000000"
+                  maxLength={6}
+                  value={confirmationCode}
+                  onChange={(e) => setConfirmationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  className="text-center text-xl tracking-[0.45em] font-semibold"
+                  autoFocus
+                  required
+                  data-testid="input-client-confirmation-code"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="link"
+                className="px-0"
+                disabled={isSendingConfirmation}
+                onClick={() => { setConfirmationChallengeId(null); setConfirmationCode(""); setError(""); }}
+              >
+                Alterar dados ou solicitar outro código
+              </Button>
+            </>
+          ) : <>
           {/* Name */}
           <div className="space-y-1.5">
             <Label htmlFor="reg-name">Nome completo</Label>
@@ -321,6 +382,7 @@ export function RegisterModal({ children, defaultOpen = false }: RegisterModalPr
               da Central dos Desmanches.
             </label>
           </div>
+          </>}
 
           {/* Generic error */}
           {error && <p className="text-sm text-red-500">{error}</p>}
@@ -331,10 +393,10 @@ export function RegisterModal({ children, defaultOpen = false }: RegisterModalPr
             disabled={!canSubmit}
             data-testid="button-register"
           >
-            {isLoading ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cadastrando...</>
+            {isLoading || isSendingConfirmation ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {confirmationChallengeId ? "Confirmando..." : "Enviando código..."}</>
             ) : (
-              "Criar conta"
+              confirmationChallengeId ? "Confirmar e criar conta" : "Enviar código de confirmação"
             )}
           </Button>
         </form>

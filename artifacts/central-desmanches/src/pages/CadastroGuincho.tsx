@@ -36,7 +36,7 @@ function maskCpf(v: string) {
     .replace(/(\d{3})(\d)/, "$1-$2");
 }
 
-type Step = "form" | "plan" | "payment" | "payment_pending" | "success";
+type Step = "form" | "plan" | "confirmation" | "payment" | "payment_pending" | "success";
 type Plan = "annual" | "monthly";
 
 export default function CadastroGuincho() {
@@ -52,6 +52,8 @@ export default function CadastroGuincho() {
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [acceptedContract, setAcceptedContract] = useState(false);
   const [showContract, setShowContract] = useState(false);
+  const [confirmationChallengeId, setConfirmationChallengeId] = useState<string | null>(null);
+  const [confirmationCode, setConfirmationCode] = useState("");
 
   const [documentType, setDocumentType] = useState<"cnpj" | "cpf">("cnpj");
   const [form, setForm] = useState({
@@ -165,6 +167,48 @@ export default function CadastroGuincho() {
   async function handlePlanConfirm() {
     setIsLoading(true);
     try {
+      const res = await fetch("/api/auth/registration/send-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: form.email,
+          phone: form.phone,
+          purpose: "guincho_registration",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Não foi possível enviar o código de confirmação.");
+      setConfirmationChallengeId(data.challengeId);
+      setConfirmationCode("");
+      setStep("confirmation");
+    } catch (err: any) {
+      toast({ title: err.message || "Erro ao enviar o código", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleConfirmation() {
+    if (!confirmationChallengeId || !/^\d{6}$/.test(confirmationCode)) return;
+    setIsLoading(true);
+    try {
+      const confirmationResponse = await fetch("/api/auth/registration/confirm-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeId: confirmationChallengeId, code: confirmationCode }),
+      });
+      const confirmation = await confirmationResponse.json();
+      if (!confirmationResponse.ok) throw new Error(confirmation.message || "Código inválido.");
+      await submitRegistration(confirmation.confirmationToken);
+    } catch (err: any) {
+      toast({ title: err.message || "Erro ao confirmar o código", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function submitRegistration(confirmationToken: string) {
+    try {
       const payload = {
         name: form.name,
         tradingName: form.tradingName,
@@ -185,6 +229,7 @@ export default function CadastroGuincho() {
         state: form.state,
         serviceRadius: parseInt(form.serviceRadius) || 50,
         plan: selectedPlan,
+        confirmationToken,
       };
       const res = await fetch("/api/guinchos/register", {
         method: "POST",
@@ -202,8 +247,6 @@ export default function CadastroGuincho() {
       }
     } catch (err: any) {
       toast({ title: err.message || "Erro no cadastro", variant: "destructive" });
-    } finally {
-      setIsLoading(false);
     }
   }
 
@@ -302,6 +345,55 @@ export default function CadastroGuincho() {
               disabled={isLoading}
             >
               ← Voltar ao formulário
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "confirmation") {
+    return (
+      <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
+        <div className="bg-card border rounded-2xl p-8 max-w-md w-full space-y-6 shadow-lg">
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mx-auto">
+              <CheckCircle2 className="h-8 w-8 text-primary" />
+            </div>
+            <h2 className="text-2xl font-bold">Confirme seu e-mail</h2>
+            <p className="text-muted-foreground text-sm">
+              Enviamos um código de seis dígitos para <strong>{form.email}</strong>. Ele expira em 10 minutos.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="guincho-confirmation-code">Código de confirmação</Label>
+            <Input
+              id="guincho-confirmation-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="000000"
+              maxLength={6}
+              value={confirmationCode}
+              onChange={(e) => setConfirmationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              className="text-center text-xl tracking-[0.45em] font-semibold"
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-3">
+            <Button className="w-full gap-2" size="lg" onClick={handleConfirmation} disabled={isLoading || !/^\d{6}$/.test(confirmationCode)}>
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              {isLoading ? "Confirmando..." : "Confirmar e ir para pagamento"}
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full"
+              size="sm"
+              disabled={isLoading}
+              onClick={() => { setConfirmationChallengeId(null); setConfirmationCode(""); setStep("plan"); }}
+            >
+              Solicitar outro código
             </Button>
           </div>
         </div>

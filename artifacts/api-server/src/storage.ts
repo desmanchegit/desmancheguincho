@@ -69,6 +69,7 @@ sqlite.exec(`
 
   CREATE TABLE IF NOT EXISTS desmanche_registration_verifications (
     id TEXT PRIMARY KEY,
+    purpose TEXT NOT NULL DEFAULT 'desmanche_registration',
     channel TEXT NOT NULL CHECK (channel IN ('email', 'sms', 'whatsapp')),
     email TEXT NOT NULL,
     phone TEXT NOT NULL,
@@ -475,6 +476,7 @@ try { sqlite.exec(`ALTER TABLE users ADD COLUMN email_verification_expires INTEG
 try { sqlite.exec(`ALTER TABLE users ADD COLUMN password_reset_token TEXT`); } catch (e) {}
 try { sqlite.exec(`ALTER TABLE users ADD COLUMN password_reset_expires INTEGER`); } catch (e) {}
 try { sqlite.exec(`ALTER TABLE users ADD COLUMN cpf TEXT`); } catch (e) {}
+try { sqlite.exec(`ALTER TABLE desmanche_registration_verifications ADD COLUMN purpose TEXT NOT NULL DEFAULT 'desmanche_registration'`); } catch (e) {}
 
 // Migração multi-item: adicionar order_item_id em tabelas relacionadas
 try { sqlite.exec(`ALTER TABLE proposals ADD COLUMN order_item_id TEXT REFERENCES order_items(id)`); } catch (e) {}
@@ -839,6 +841,7 @@ export async function createDesmanche(data: schema.InsertDesmanche) {
 
 export function createDesmancheRegistrationVerification(data: {
   id: string;
+  purpose?: "client_registration" | "desmanche_registration" | "guincho_registration";
   channel: "email" | "sms" | "whatsapp";
   email: string;
   phone: string;
@@ -847,14 +850,14 @@ export function createDesmancheRegistrationVerification(data: {
 }) {
   sqlite.prepare(`
     INSERT INTO desmanche_registration_verifications
-      (id, channel, email, phone, code_hash, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(data.id, data.channel, data.email, data.phone, data.codeHash, data.expiresAt);
+      (id, purpose, channel, email, phone, code_hash, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(data.id, data.purpose ?? "desmanche_registration", data.channel, data.email, data.phone, data.codeHash, data.expiresAt);
 }
 
 export function getDesmancheRegistrationVerification(id: string): any {
   return sqlite.prepare(`
-    SELECT id, channel, email, phone, code_hash, expires_at, attempts, consumed_at
+    SELECT id, purpose, channel, email, phone, code_hash, expires_at, attempts, consumed_at
     FROM desmanche_registration_verifications
     WHERE id = ?
   `).get(id);
