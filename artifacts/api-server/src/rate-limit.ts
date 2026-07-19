@@ -54,7 +54,7 @@ export const globalLimiter = rateLimit({
   statusCode: 429,
   message: jsonLimitResponse,
   skip: (req) =>
-    req.path === "/healthz" || req.path === "/api/billing/webhook",
+    req.path === "/healthz" || req.path === "/api/billing/webhook" || req.path === "/api/webhooks/resend",
   // This deployment has one backend instance. Multiple instances need a shared store.
 });
 

@@ -5,6 +5,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { registerRoutes } from "./routes/routes";
 import { globalLimiter, routeLimiters } from "./rate-limit";
+import { receiveAndForwardResendEmail } from "./resend-inbound";
 
 const app: Express = express();
 app.set("trust proxy", "loopback");
@@ -72,7 +73,14 @@ app.use(
     maxAge: 86400,
   }),
 );
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({
+  limit: "100kb",
+  verify(req, _res, buffer) {
+    if (req.url?.split("?")[0] === "/api/webhooks/resend") {
+      (req as typeof req & { rawBody?: string }).rawBody = buffer.toString("utf8");
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true, limit: "100kb", parameterLimit: 100 }));
 
 app.get("/healthz", (_req, res) => {
@@ -84,5 +92,7 @@ app.use(routeLimiters);
 app.use("/api", router);
 
 await registerRoutes(app);
+
+app.post("/api/webhooks/resend", receiveAndForwardResendEmail);
 
 export default app;
