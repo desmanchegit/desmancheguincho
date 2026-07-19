@@ -18,6 +18,7 @@ import PoliticaPrivacidade from "@/pages/PoliticaPrivacidade";
 import CadastroGuincho from "@/pages/CadastroGuincho";
 import Guinchos from "@/pages/Guinchos";
 import GuinhoDashboard from "@/pages/GuinhoDashboard";
+import { PwaSuggestion } from "@/components/PwaExperience";
 
 function Router() {
   return (
@@ -47,6 +48,7 @@ function App() {
       <AuthProvider>
         <TooltipProvider>
           <Toaster />
+          <PwaSuggestion />
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <Router />
           </WouterRouter>

@@ -14,6 +14,7 @@ import {
 import { ensureAsaasPaymentForBillingTransaction } from "../asaas-payment-service-runtime";
 import type { EnsureAsaasCustomerResult } from "../asaas-customer-service";
 import * as email from "../email";
+import { getPushPublicKey, sendPushNotification } from "../push";
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "crypto";
 import bcrypt from "bcryptjs";
 import { asaasWebhookToken, guinchoPhotosDir, jwtSecret, privateDocumentsDir, publicUploadsDir } from "../config";
@@ -788,6 +789,68 @@ export async function registerRoutes(app: Express) {
   // ============================================
   // USER ROUTES
   // ============================================
+
+  const pushSubscriptionSchema = z.object({
+    endpoint: z.string().url().max(2048),
+    keys: z.object({
+      p256dh: z.string().min(16).max(1024),
+      auth: z.string().min(8).max(1024),
+    }),
+  });
+
+  app.get("/api/push/public-key", authMiddleware, (_req, res) => {
+    const publicKey = getPushPublicKey();
+    if (!publicKey) return res.status(503).json({ message: "Notificações ainda não estão configuradas." });
+    res.json({ publicKey });
+  });
+
+  app.post("/api/push/subscriptions", authMiddleware, async (req, res) => {
+    try {
+      const subscription = pushSubscriptionSchema.parse(req.body);
+      const user = (req as any).user;
+      if (!(["client", "desmanche", "guincho", "admin"] as const).includes(user.type)) {
+        return res.status(403).json({ message: "Tipo de conta não permitido." });
+      }
+      await storage.savePushSubscription({
+        userId: user.id,
+        userType: user.type,
+        endpoint: subscription.endpoint,
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
+      });
+      res.status(201).json({ ok: true });
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ message: "Assinatura de notificação inválida." });
+      console.error("Save push subscription error:", error);
+      res.status(500).json({ message: "Não foi possível ativar as notificações." });
+    }
+  });
+
+  app.delete("/api/push/subscriptions", authMiddleware, async (req, res) => {
+    try {
+      const { endpoint } = z.object({ endpoint: z.string().url().max(2048) }).parse(req.body);
+      await storage.removePushSubscription(endpoint, (req as any).user.id);
+      res.status(204).end();
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ message: "Assinatura de notificação inválida." });
+      res.status(500).json({ message: "Não foi possível desativar as notificações." });
+    }
+  });
+
+  app.post("/api/push/test", authMiddleware, async (req, res) => {
+    const user = (req as any).user;
+    if (!(["client", "desmanche", "guincho", "admin"] as const).includes(user.type)) {
+      return res.status(403).json({ message: "Tipo de conta não permitido." });
+    }
+    const result = await sendPushNotification(user.id, user.type, {
+      title: "Notificações ativadas",
+      body: "Você receberá atualizações importantes da Central dos Desmanches.",
+      url: user.type === "guincho" ? "/guincho/dashboard" : "/",
+      tag: "push-test",
+    });
+    if (!result.configured) return res.status(503).json({ message: "Notificações ainda não estão configuradas." });
+    res.status(202).json({ sent: result.sent });
+  });
   
   app.get("/api/users/me", authMiddleware, async (req, res) => {
     try {
@@ -1404,6 +1467,21 @@ export async function registerRoutes(app: Express) {
             orderId: proposalData.orderId,
             clientId: order.clientId,
             desmancheId: proposalData.desmancheId,
+          });
+        }
+        if (order?.clientId) {
+          void sendPushNotification(order.clientId, "client", {
+            title: "Nova proposta recebida",
+            body: "Um desmanche enviou uma proposta para o seu pedido.",
+            url: "/cliente",
+            tag: `proposal-${proposal!.id}`,
+          });
+        } else if (order?.desmancheId) {
+          void sendPushNotification(order.desmancheId, "desmanche", {
+            title: "Nova proposta recebida",
+            body: "Um desmanche respondeu ao seu anúncio.",
+            url: "/desmanche",
+            tag: `proposal-${proposal!.id}`,
           });
         }
       } catch (chatErr) {
@@ -2326,6 +2404,14 @@ export async function registerRoutes(app: Express) {
         senderType,
         content: content.trim(),
       });
+      const recipientId = userType === "client" ? room.desmancheId : room.clientId;
+      const recipientType = userType === "client" ? "desmanche" : "client";
+      void sendPushNotification(recipientId, recipientType, {
+        title: "Nova mensagem",
+        body: "Você recebeu uma nova mensagem em uma negociação.",
+        url: recipientType === "client" ? "/cliente" : "/desmanche",
+        tag: `chat-${room.id}`,
+      });
       res.status(201).json(message);
     } catch (error) {
       console.error("Create message error:", error);
@@ -2352,6 +2438,12 @@ export async function registerRoutes(app: Express) {
         senderId: desmancheId,
         senderType: "desmanche",
         content: content.trim(),
+      });
+      void sendPushNotification(clientId, "client", {
+        title: "Nova mensagem sobre seu pedido",
+        body: "Um desmanche enviou uma mensagem antes da proposta.",
+        url: "/cliente",
+        tag: `pre-proposal-${room.id}`,
       });
       res.status(201).json({ room, message });
     } catch (error) {
@@ -2412,6 +2504,14 @@ export async function registerRoutes(app: Express) {
         senderId: userId,
         senderType: userType === "desmanche" ? "desmanche" : "client",
         content: content.trim(),
+      });
+      const recipientId = userType === "client" ? room.desmancheId : room.clientId;
+      const recipientType = userType === "client" ? "desmanche" : "client";
+      void sendPushNotification(recipientId, recipientType, {
+        title: "Nova mensagem",
+        body: "Você recebeu uma mensagem sobre um pedido.",
+        url: recipientType === "client" ? "/cliente" : "/desmanche",
+        tag: `pre-proposal-${room.id}`,
       });
       res.status(201).json(message);
     } catch (error) {

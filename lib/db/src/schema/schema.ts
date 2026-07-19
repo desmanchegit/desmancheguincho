@@ -20,6 +20,17 @@ export const users = sqliteTable("users", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 });
 
+export const pushSubscriptions = sqliteTable("push_subscriptions", {
+  id: text("id").primaryKey().default(sql`(lower(hex(randomblob(16))))`),
+  userId: text("user_id").notNull(),
+  userType: text("user_type", { enum: ["client", "desmanche", "guincho", "admin"] }).notNull(),
+  endpoint: text("endpoint").notNull().unique(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
+});
+
 // Tabela de Endereços
 export const addresses = sqliteTable("addresses", {
   id: text("id").primaryKey().default(sql`(lower(hex(randomblob(16)))`),

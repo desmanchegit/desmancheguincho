@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Truck, LogOut, User, Clock, CheckCircle2, XCircle, Loader2, Save, Phone, MapPin, AlertCircle, Camera } from "lucide-react";
 import logoImg from "@assets/Design_sem_nome_(23)_1772229532951.png";
+import { AppAndNotificationsCard } from "@/components/PwaExperience";
 
 const GUINCHO_TOKEN_KEY = "guincho_token";
 
@@ -389,6 +390,8 @@ function ProfileTab({ user, onUpdate }: { user: GuinchoUser; onUpdate: (u: Guinc
       <Button onClick={handleSave} disabled={isLoading}>
         {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Salvando...</> : <><Save className="mr-2 h-4 w-4" />Salvar Alterações</>}
       </Button>
+
+      <AppAndNotificationsCard authToken={getGuinchoToken()} />
     </div>
   );
 }

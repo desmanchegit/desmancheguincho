@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Loader2, Camera, MapPin, ExternalLink, CheckCircle2, Settings2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { AppAndNotificationsCard } from "@/components/PwaExperience";
 
 const VEHICLE_SEGMENTS = [
   { id: "car",          label: "Carro",             icon: "🚗" },
@@ -491,6 +492,8 @@ export default function DesmancheProfileTab() {
           </div>
         </CardContent>
       </Card>
+
+      <AppAndNotificationsCard />
     </div>
   );
 }

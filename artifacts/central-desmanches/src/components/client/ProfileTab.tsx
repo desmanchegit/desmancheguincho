@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { AppAndNotificationsCard } from "@/components/PwaExperience";
 import {
   User,
   Phone,
@@ -346,6 +347,8 @@ export function ProfileTab() {
           </div>
         </CardContent>
       </Card>
+
+      <AppAndNotificationsCard />
 
       <Button
         size="lg"

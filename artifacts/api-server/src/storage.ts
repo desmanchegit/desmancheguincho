@@ -51,6 +51,19 @@ sqlite.exec(`
     state TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    user_id TEXT NOT NULL,
+    user_type TEXT NOT NULL,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+  );
+  CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx
+    ON push_subscriptions(user_id, user_type);
+
   CREATE TABLE IF NOT EXISTS desmanches (
     id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     company_name TEXT NOT NULL,
@@ -720,6 +733,51 @@ export async function getUserById(id: string) {
   return db.query.users.findFirst({
     where: eq(schema.users.id, id),
   });
+}
+
+export type PushSubscriptionInput = {
+  userId: string;
+  userType: "client" | "desmanche" | "guincho" | "admin";
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+};
+
+export async function savePushSubscription(input: PushSubscriptionInput) {
+  const existing = await db.query.pushSubscriptions.findFirst({
+    where: eq(schema.pushSubscriptions.endpoint, input.endpoint),
+  });
+
+  if (existing) {
+    await db.update(schema.pushSubscriptions)
+      .set({
+        userId: input.userId,
+        userType: input.userType,
+        p256dh: input.p256dh,
+        auth: input.auth,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.pushSubscriptions.endpoint, input.endpoint));
+    return;
+  }
+
+  await db.insert(schema.pushSubscriptions).values(input);
+}
+
+export async function getPushSubscriptions(userId: string, userType: PushSubscriptionInput["userType"]) {
+  return db.query.pushSubscriptions.findMany({
+    where: and(
+      eq(schema.pushSubscriptions.userId, userId),
+      eq(schema.pushSubscriptions.userType, userType),
+    ),
+  });
+}
+
+export async function removePushSubscription(endpoint: string, userId?: string) {
+  const condition = userId
+    ? and(eq(schema.pushSubscriptions.endpoint, endpoint), eq(schema.pushSubscriptions.userId, userId))
+    : eq(schema.pushSubscriptions.endpoint, endpoint);
+  await db.delete(schema.pushSubscriptions).where(condition);
 }
 
 export async function getUserByEmail(email: string) {
