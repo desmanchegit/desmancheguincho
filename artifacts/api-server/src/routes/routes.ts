@@ -236,7 +236,7 @@ function requireType(types: string[]) {
   };
 }
 
-const desmancheConfirmationChannels = ["email", "sms", "whatsapp"] as const;
+const desmancheConfirmationChannels = ["email"] as const;
 const emailRegistrationPurposes = ["client_registration", "guincho_registration"] as const;
 
 function normalizeBrazilianPhone(value: string): string | null {
@@ -634,18 +634,14 @@ export async function registerRoutes(app: Express) {
       storage.createDesmancheRegistrationVerification({
         id: challengeId,
         purpose: "desmanche_registration",
-        channel: requestData.channel,
+        channel: "email",
         email: emailAddress,
         phone,
         codeHash: createRegistrationConfirmationCodeHash(challengeId, code),
         expiresAt: Math.floor(Date.now() / 1000) + 600,
       });
 
-      if (requestData.channel === "email") {
-        await email.sendDesmancheRegistrationCode(emailAddress, code);
-      } else {
-        await email.sendDesmancheRegistrationMessage(requestData.channel, phone, code);
-      }
+      await email.sendDesmancheRegistrationCode(emailAddress, code);
 
       res.status(201).json({ challengeId, expiresIn: 600 });
     } catch (error) {

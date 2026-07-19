@@ -12,7 +12,7 @@ import {
   CheckCircle2, TrendingUp, ShieldCheck, Users, Star, Package,
   MapPin, Building2, UserCheck, FileText, ImageIcon, Lock,
   Loader2, ArrowLeft, Upload, ChevronRight, Search, AlertCircle,
-  Info, CreditCard, Calendar, Mail, MessageCircle, Send,
+  Info, CreditCard, Calendar, Mail, Send,
 } from "lucide-react";
 import logoImg from "@assets/Design_sem_nome_(23)_1772229532951.png";
 
@@ -96,7 +96,6 @@ export default function CadastroDesmanche() {
   const [cnpjStatus, setCnpjStatus] = useState<"idle" | "found" | "error">("idle");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
-  const [confirmationChannel, setConfirmationChannel] = useState<"email" | "sms" | "whatsapp">("email");
   const [confirmationChallengeId, setConfirmationChallengeId] = useState<string | null>(null);
   const [confirmationCode, setConfirmationCode] = useState("");
   const [confirmationToken, setConfirmationToken] = useState<string | null>(null);
@@ -206,7 +205,7 @@ export default function CadastroDesmanche() {
         body: JSON.stringify({
           email: form.email,
           phone: form.phone,
-          channel: confirmationChannel,
+          channel: "email",
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -216,9 +215,7 @@ export default function CadastroDesmanche() {
       setConfirmationToken(null);
       toast({
         title: "Código enviado",
-        description: confirmationChannel === "email"
-          ? "Verifique sua caixa de entrada."
-          : `Enviamos o código para ${form.phone}.`,
+        description: "Verifique sua caixa de entrada.",
       });
     } catch (err: any) {
       toast({ title: "Erro ao enviar código", description: err?.message || "Tente novamente.", variant: "destructive" });
@@ -337,13 +334,6 @@ export default function CadastroDesmanche() {
     } finally {
       setIsConfirmingCode(false);
     }
-  };
-
-  const changeConfirmationChannel = (channel: "email" | "sms" | "whatsapp") => {
-    setConfirmationChannel(channel);
-    setConfirmationChallengeId(null);
-    setConfirmationCode("");
-    setConfirmationToken(null);
   };
 
   const toggleVehicleType = (id: string) => {
@@ -712,25 +702,10 @@ export default function CadastroDesmanche() {
                   <div className="space-y-3 rounded-xl border p-5">
                     <div>
                       <h3 className="font-semibold">Confirmação do cadastro</h3>
-                      <p className="text-sm text-muted-foreground mt-1">Escolha como deseja receber o código de confirmação.</p>
+                      <p className="text-sm text-muted-foreground mt-1">Enviaremos o código de confirmação para o e-mail informado.</p>
                     </div>
-                    <div className="grid sm:grid-cols-3 gap-2">
-                      {[
-                        { value: "email" as const, label: "E-mail", icon: Mail },
-                        { value: "sms" as const, label: "SMS", icon: Send },
-                        { value: "whatsapp" as const, label: "WhatsApp", icon: MessageCircle },
-                      ].map(({ value, label, icon: Icon }) => (
-                        <Button
-                          key={value}
-                          type="button"
-                          variant={confirmationChannel === value ? "default" : "outline"}
-                          className="justify-start gap-2"
-                          onClick={() => changeConfirmationChannel(value)}
-                          disabled={isSendingCode || isConfirmingCode || isSubmitting}
-                        >
-                          <Icon className="h-4 w-4" /> {label}
-                        </Button>
-                      ))}
+                    <div className="flex items-center gap-2 rounded-lg border border-primary bg-primary/5 px-3 py-2 text-sm font-medium text-primary">
+                      <Mail className="h-4 w-4" /> E-mail
                     </div>
                     {confirmationChallengeId && !confirmationToken && (
                       <div className="space-y-3 pt-2">
