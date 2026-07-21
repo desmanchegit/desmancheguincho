@@ -90,7 +90,9 @@ const loginPaths = new Set([
 ]);
 const uploadPaths = new Set([
   "/api/upload",
+  "/api/desmanches/logo",
   "/api/documents/upload",
+  "/api/storage/uploads/request-url",
   "/api/guinchos/me/photo",
 ]);
 

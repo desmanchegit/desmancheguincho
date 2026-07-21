@@ -1,16 +1,37 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { Readable } from "stream";
 import { z } from "zod";
+import jwt from "jsonwebtoken";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
+import { jwtSecret } from "../config";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
 const requestUploadUrlSchema = z.object({
-  name: z.string().min(1),
-  size: z.number().int().min(1),
-  contentType: z.string().min(1),
+  name: z.string().min(1).max(255),
+  size: z.number().int().min(1).max(10 * 1024 * 1024),
+  contentType: z.string().min(1).max(255),
 });
+
+type StorageRequest = Request & { user?: { id: string } };
+
+function requireAuthenticatedUser(req: StorageRequest, res: Response, next: () => void): void {
+  const token = req.headers.authorization?.replace("Bearer ", "");
+  if (!token) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+
+  try {
+    const user = jwt.verify(token, jwtSecret, { algorithms: ["HS256"] }) as { id?: unknown };
+    if (typeof user.id !== "string" || !user.id) throw new Error("Invalid token subject");
+    req.user = { id: user.id };
+    next();
+  } catch {
+    res.status(401).json({ error: "Invalid token" });
+  }
+}
 
 /**
  * POST /storage/uploads/request-url
@@ -19,7 +40,7 @@ const requestUploadUrlSchema = z.object({
  * The client sends JSON metadata (name, size, contentType) — NOT the file.
  * Then uploads the file directly to the returned presigned URL.
  */
-router.post("/storage/uploads/request-url", async (req: Request, res: Response) => {
+router.post("/storage/uploads/request-url", requireAuthenticatedUser, async (req: StorageRequest, res: Response) => {
   const parsed = requestUploadUrlSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Missing or invalid required fields" });
@@ -79,15 +100,24 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
 /**
  * GET /storage/objects/*
  *
- * Serve object entities from PRIVATE_OBJECT_DIR. Used here to serve guincho
- * photos — publicly readable by design since photos appear on public listing cards.
+ * Serve object entities from PRIVATE_OBJECT_DIR only after the stored ACL
+ * authorizes the authenticated requester. Public assets belong under
+ * /storage/public-objects instead.
  */
-router.get("/storage/objects/*path", async (req: Request, res: Response) => {
+router.get("/storage/objects/*path", requireAuthenticatedUser, async (req: StorageRequest, res: Response) => {
   try {
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
     const objectPath = `/objects/${wildcardPath}`;
     const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+    const allowed = await objectStorageService.canAccessObjectEntity({
+      userId: req.user!.id,
+      objectFile,
+    });
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
 
     const response = await objectStorageService.downloadObject(objectFile);
 

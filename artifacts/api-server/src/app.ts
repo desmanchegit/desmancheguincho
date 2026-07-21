@@ -9,6 +9,35 @@ import { receiveAndForwardResendEmail } from "./resend-inbound";
 
 const app: Express = express();
 app.set("trust proxy", "loopback");
+
+// Database relation queries can contain credential columns.  Keep this final
+// safeguard at the HTTP boundary so a future endpoint cannot accidentally
+// disclose stored password or verification-reset material.
+const sensitiveResponseFields = new Set([
+  "password",
+  "passwordResetToken",
+  "password_reset_token",
+  "emailVerificationToken",
+  "email_verification_token",
+]);
+
+function redactSensitiveResponseFields(value: unknown): unknown {
+  if (value === null || typeof value !== "object" || value instanceof Date || Buffer.isBuffer(value)) return value;
+  if (Array.isArray(value)) return value.map(redactSensitiveResponseFields);
+
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, nestedValue]) =>
+      sensitiveResponseFields.has(key) ? [] : [[key, redactSensitiveResponseFields(nestedValue)]],
+    ),
+  );
+}
+
+app.use((_req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = ((body: unknown) => originalJson(redactSensitiveResponseFields(body))) as typeof res.json;
+  next();
+});
+
 const productionOrigins = new Set([
   "https://centraldosdesmanches.com.br",
   "https://www.centraldosdesmanches.com.br",
