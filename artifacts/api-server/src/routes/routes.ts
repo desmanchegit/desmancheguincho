@@ -263,6 +263,25 @@ function requireType(types: string[]) {
 const desmancheConfirmationChannels = ["email"] as const;
 const emailRegistrationPurposes = ["client_registration", "guincho_registration"] as const;
 
+const adminDesmancheUpdateSchema = z.object({
+  companyName: z.string().trim().min(1).max(255),
+  tradingName: z.string().trim().min(1).max(255),
+  cnpj: z.string().transform((value) => value.replace(/\D/g, "")).pipe(z.string().regex(/^\d{14}$/)),
+  email: z.string().trim().email().max(255),
+  phone: z.string().trim().min(6).max(32),
+  responsibleName: z.string().trim().max(255).optional().nullable(),
+  responsibleCpf: z.string().trim().max(32).optional().nullable(),
+  vehicleTypes: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+  address: z.object({
+    zipCode: z.string().trim().min(1).max(16),
+    street: z.string().trim().min(1).max(255),
+    number: z.string().trim().max(32).optional().nullable(),
+    complement: z.string().trim().max(255).optional().nullable(),
+    city: z.string().trim().min(1).max(120),
+    state: z.string().trim().length(2),
+  }).optional(),
+});
+
 function normalizeBrazilianPhone(value: string): string | null {
   const digits = value.replace(/\D/g, "");
   const nationalNumber = digits.length === 10 || digits.length === 11
@@ -2343,6 +2362,63 @@ export async function registerRoutes(app: Express) {
     } catch (error) {
       console.error("Get admin desmanche detail error:", error);
       res.status(500).json({ message: "Erro ao buscar desmanche" });
+    }
+  });
+
+  app.patch("/api/admin/desmanches/:id", authMiddleware, requireType(["admin"]), async (req, res) => {
+    try {
+      const { id } = req.params as { id: string };
+      const data = adminDesmancheUpdateSchema.parse(req.body);
+      const desmanche = await storage.getDesmancheById(id);
+      if (!desmanche) return res.status(404).json({ message: "Desmanche não encontrado" });
+
+      const email = data.email.toLowerCase();
+      const existingEmail = await storage.getDesmancheByEmail(email);
+      if (existingEmail && existingEmail.id !== id) return res.status(409).json({ message: "E-mail já cadastrado em outro desmanche" });
+
+      const existingCnpj = await storage.getDesmancheByCnpj(data.cnpj);
+      if (existingCnpj && existingCnpj.id !== id) return res.status(409).json({ message: "CNPJ já cadastrado em outro desmanche" });
+
+      const responsibleCpf = data.responsibleCpf?.replace(/\D/g, "") || null;
+      if (responsibleCpf) {
+        const existingCpf = await storage.getDesmancheByResponsibleCpf(responsibleCpf);
+        if (existingCpf && existingCpf.id !== id) return res.status(409).json({ message: "CPF do responsável já cadastrado em outro desmanche" });
+      }
+
+      const updated = await storage.updateDesmancheByAdmin(id, {
+        companyName: data.companyName,
+        tradingName: data.tradingName,
+        cnpj: data.cnpj,
+        email,
+        phone: data.phone,
+        responsibleName: data.responsibleName?.trim() || null,
+        responsibleCpf,
+        vehicleTypes: JSON.stringify(data.vehicleTypes),
+      });
+      if (data.address) {
+        await storage.createOrUpdateDesmancheAddress(id, {
+          ...data.address,
+          number: data.address.number || undefined,
+          complement: data.address.complement || undefined,
+          state: data.address.state.toUpperCase(),
+        });
+      }
+
+      const admin = (req as any).user;
+      storage.logActivity({
+        action: "desmanche_updated_by_admin",
+        actorType: "admin",
+        actorId: admin.id,
+        actorName: admin.email,
+        targetType: "desmanche",
+        targetId: id,
+        description: `Dados cadastrais de ${updated?.tradingName || desmanche.tradingName} atualizados pelo administrador`,
+      });
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) return res.status(400).json({ message: "Dados inválidos", errors: error.issues });
+      console.error("Update admin desmanche error:", error);
+      res.status(500).json({ message: "Erro ao atualizar dados do desmanche" });
     }
   });
 

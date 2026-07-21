@@ -6,10 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   ArrowLeft, Building2, MapPin, Phone, Mail, FileText, Star,
   DollarSign, ShoppingBag, CheckCircle2, XCircle, Clock, AlertTriangle,
-  User, Package, Loader2, ShieldCheck, ShieldOff, Ban,
+  User, Package, Loader2, ShieldCheck, ShieldOff, Ban, Edit3,
 } from "lucide-react";
 
 const NEG_STATUS: Record<string, { label: string; color: string }> = {
@@ -58,6 +61,8 @@ export default function DesmancheDetailPage({ id, onBack }: { id: string; onBack
   const { toast } = useToast();
   const qc = useQueryClient();
   const [confirmAction, setConfirmAction] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<any>(null);
 
   const { data: d, isLoading, isError, refetch } = useQuery<any>({
     queryKey: ["/api/admin/desmanches", id],
@@ -81,6 +86,22 @@ export default function DesmancheDetailPage({ id, onBack }: { id: string; onBack
       setConfirmAction(null);
     },
     onError: () => toast({ title: "Erro ao atualizar status", variant: "destructive" }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await apiRequest("PATCH", `/api/admin/desmanches/${id}`, payload);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Não foi possível atualizar o cadastro");
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/admin/desmanches", id] });
+      qc.invalidateQueries({ queryKey: ["/api/admin/desmanches"] });
+      setEditOpen(false);
+      toast({ title: "Cadastro atualizado com sucesso!" });
+    },
+    onError: (error: Error) => toast({ title: "Erro ao atualizar cadastro", description: error.message, variant: "destructive" }),
   });
 
   if (isLoading) {
@@ -124,6 +145,21 @@ export default function DesmancheDetailPage({ id, onBack }: { id: string; onBack
     { status: "rejected", label: "Rejeitar", icon: Ban, cls: "bg-red-600 hover:bg-red-700 text-white", show: d.status !== "rejected" },
   ].filter(a => a.show);
 
+  const openEditor = () => {
+    let vehicleTypes: string[] = [];
+    try { vehicleTypes = Array.isArray(d.vehicleTypes) ? d.vehicleTypes : JSON.parse(d.vehicleTypes || "[]"); } catch {}
+    setEditForm({
+      companyName: d.companyName || "", tradingName: d.tradingName || "", cnpj: d.cnpj || "",
+      email: d.email || "", phone: d.phone || "", responsibleName: d.responsibleName || "", responsibleCpf: d.responsibleCpf || "",
+      vehicleTypes,
+      address: { zipCode: d.address?.zipCode || "", street: d.address?.street || "", number: d.address?.number || "", complement: d.address?.complement || "", city: d.address?.city || "", state: d.address?.state || "" },
+    });
+    setEditOpen(true);
+  };
+
+  const setEdit = (field: string, value: string) => setEditForm((current: any) => ({ ...current, [field]: value }));
+  const setAddress = (field: string, value: string) => setEditForm((current: any) => ({ ...current, address: { ...current.address, [field]: value } }));
+
   return (
     <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
       {/* Header */}
@@ -143,6 +179,7 @@ export default function DesmancheDetailPage({ id, onBack }: { id: string; onBack
 
         {/* Action buttons */}
         <div className="flex gap-2 shrink-0">
+          <Button size="sm" variant="outline" onClick={openEditor}><Edit3 className="h-3.5 w-3.5 mr-1" />Editar dados</Button>
           {STATUS_ACTIONS.map(({ status, label, icon: Icon, cls }) => (
             confirmAction === status ? (
               <div key={status} className="flex gap-1">
@@ -159,6 +196,27 @@ export default function DesmancheDetailPage({ id, onBack }: { id: string; onBack
           ))}
         </div>
       </div>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar cadastro do desmanche</DialogTitle>
+            <DialogDescription>As alterações ficam registradas no histórico administrativo. A senha não é alterada nesta tela.</DialogDescription>
+          </DialogHeader>
+          {editForm && <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
+            {[
+              ["companyName", "Razão Social"], ["tradingName", "Nome Fantasia"], ["cnpj", "CNPJ"], ["email", "E-mail"],
+              ["phone", "Telefone"], ["responsibleName", "Nome do Responsável"], ["responsibleCpf", "CPF do Responsável"],
+            ].map(([field, label]) => <div key={field} className="space-y-1.5"><Label>{label}</Label><Input value={editForm[field]} onChange={(e) => setEdit(field, e.target.value)} /></div>)}
+            <div className="sm:col-span-2 pt-2 border-t"><p className="text-sm font-semibold mb-3">Endereço</p></div>
+            {[["zipCode", "CEP"], ["street", "Logradouro"], ["number", "Número"], ["complement", "Complemento"], ["city", "Cidade"], ["state", "Estado (UF)"]].map(([field, label]) => <div key={field} className="space-y-1.5"><Label>{label}</Label><Input maxLength={field === "state" ? 2 : undefined} value={editForm.address[field]} onChange={(e) => setAddress(field, field === "state" ? e.target.value.toUpperCase() : e.target.value)} /></div>)}
+          </div>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={updateMutation.isPending}>Cancelar</Button>
+            <Button onClick={() => updateMutation.mutate(editForm)} disabled={updateMutation.isPending}>{updateMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Salvar alterações</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">

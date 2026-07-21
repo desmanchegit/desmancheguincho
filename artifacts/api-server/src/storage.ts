@@ -985,6 +985,20 @@ export async function updateDesmancheProfile(id: string, data: { tradingName?: s
   return getDesmancheById(id);
 }
 
+export async function updateDesmancheByAdmin(id: string, data: {
+  companyName: string;
+  tradingName: string;
+  cnpj: string;
+  email: string;
+  phone: string;
+  responsibleName: string | null;
+  responsibleCpf: string | null;
+  vehicleTypes: string;
+}) {
+  await db.update(schema.desmanches).set(data).where(eq(schema.desmanches.id, id));
+  return getDesmancheById(id);
+}
+
 export async function getDesmancheAddressByDesmancheId(desmancheId: string) {
   return db.query.desmancheAddresses.findFirst({
     where: eq(schema.desmancheAddresses.desmancheId, desmancheId),
