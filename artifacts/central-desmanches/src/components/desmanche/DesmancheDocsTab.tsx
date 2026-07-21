@@ -16,7 +16,7 @@ const DOC_LABELS: Record<string, string> = {
   documento_empresa: "Documento da Empresa / Contrato Social",
 };
 
-const REQUIRED_DOCS = ["alvara", "documento_responsavel", "documento_empresa"];
+const REQUIRED_DOCS = ["alvara"];
 const EXPIRY_DOCS = ["alvara", "credenciamento_detran"];
 const ALERT_DAYS = 30;
 

@@ -88,8 +88,6 @@ export default function CadastroDesmanche() {
   const [alvaraFile, setAlvaraFile] = useState<File | null>(null);
   const [alvaraExpiry, setAlvaraExpiry] = useState("");
   const [detranExpiry, setDetranExpiry] = useState("");
-  const [docResponsavelFile, setDocResponsavelFile] = useState<File | null>(null);
-  const [docEmpresaFile, setDocEmpresaFile] = useState<File | null>(null);
   const [detranFile, setDetranFile] = useState<File | null>(null);
   const [selectedVehicleTypes, setSelectedVehicleTypes] = useState<string[]>([]);
   const [cnpjLoading, setCnpjLoading] = useState(false);
@@ -229,8 +227,8 @@ export default function CadastroDesmanche() {
       toast({ title: "Senhas não conferem", variant: "destructive" });
       return;
     }
-    if (!alvaraFile || !docResponsavelFile || !docEmpresaFile || !detranFile) {
-      toast({ title: "Envie todos os 4 documentos obrigatórios", variant: "destructive" });
+    if (!alvaraFile || !detranFile) {
+      toast({ title: "Envie o alvará e o credenciamento Detran", variant: "destructive" });
       return;
     }
 
@@ -284,10 +282,8 @@ export default function CadastroDesmanche() {
 
       const toTs = (dateStr: string) => dateStr ? Math.floor(new Date(dateStr).getTime() / 1000) : undefined;
       const docs = [
-        { file: alvaraFile!,        type: "alvara",                 name: "Alvará de Funcionamento",               validUntil: toTs(alvaraExpiry) },
-        { file: docResponsavelFile!, type: "documento_responsavel",  name: "Documento do Responsável",              validUntil: undefined },
-        { file: docEmpresaFile!,     type: "documento_empresa",      name: "Documento da Empresa / Contrato Social", validUntil: undefined },
-        { file: detranFile!,         type: "credenciamento_detran",  name: "Credenciamento Detran",                 validUntil: toTs(detranExpiry) },
+        { file: alvaraFile!, type: "alvara", name: "Alvará de Funcionamento", validUntil: toTs(alvaraExpiry) },
+        { file: detranFile!, type: "credenciamento_detran", name: "Credenciamento Detran", validUntil: toTs(detranExpiry) },
       ];
       for (const doc of docs) {
         await uploadPrivateDocument(doc.file, doc.type, doc.name, token, doc.validUntil);
@@ -345,7 +341,7 @@ export default function CadastroDesmanche() {
   const canAdvance = () => {
     if (step === 0) return !!(form.companyName && form.tradingName && form.cnpj && form.phone && selectedVehicleTypes.length > 0);
     if (step === 1) return true;
-    if (step === 2) return !!(alvaraFile && alvaraExpiry && docResponsavelFile && docEmpresaFile && detranFile && detranExpiry);
+    if (step === 2) return !!(alvaraFile && alvaraExpiry && detranFile && detranExpiry);
     if (step === 3) return !!(form.email && form.password && form.confirmPassword && form.password === form.confirmPassword);
     if (step === 4) return acceptedTerms; // precisa aceitar os termos
     return false;
@@ -641,7 +637,7 @@ export default function CadastroDesmanche() {
                   <h3 className="font-semibold text-lg flex items-center gap-2">
                     <FileText className="h-5 w-5 text-primary" /> Documentos
                   </h3>
-                  <p className="text-sm text-muted-foreground">Todos os documentos abaixo são obrigatórios para análise do credenciamento.</p>
+                  <p className="text-sm text-muted-foreground">Envie os documentos abaixo para análise do credenciamento.</p>
 
                   {/* Alvará */}
                   <div className="space-y-3 p-4 border rounded-lg bg-muted/20">
@@ -677,8 +673,6 @@ export default function CadastroDesmanche() {
                     </div>
                   </div>
 
-                  <FileUploadField label="Documento do Responsável (RG ou CNH)" file={docResponsavelFile} onChange={setDocResponsavelFile} required />
-                  <FileUploadField label="Documento da Empresa (Contrato Social ou CNPJ)" file={docEmpresaFile} onChange={setDocEmpresaFile} required />
                 </>
               )}
 

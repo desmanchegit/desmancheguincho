@@ -12,8 +12,6 @@ import { useToast } from "@/hooks/use-toast";
 
 const REQUIRED_DOCS = [
   { type: "alvara", label: "Alvará de Funcionamento" },
-  { type: "documento_responsavel", label: "Documento do Responsável" },
-  { type: "documento_empresa", label: "Documento da Empresa / Contrato Social" },
 ];
 
 export default function ApprovalsTab() {
