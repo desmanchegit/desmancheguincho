@@ -170,7 +170,7 @@ export default function CadastroDesmanche() {
   const uploadFile = async (file: File, token: string): Promise<string> => {
     const fd = new FormData();
     fd.append("file", file);
-    const res = await fetch("/api/upload", {
+    const res = await fetch("/api/desmanches/logo", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: fd,
@@ -626,7 +626,7 @@ export default function CadastroDesmanche() {
                       ? <img src={logoPreview} alt="Logo preview" className="h-32 w-32 object-contain rounded-lg mb-2" />
                       : <Upload className="h-10 w-10 text-muted-foreground mb-2" />
                     }
-                    <span className="text-sm text-muted-foreground">{logoFile ? logoFile.name : "Clique para selecionar (JPG, PNG, WebP)"}</span>
+                    <span className="text-sm text-muted-foreground">{logoFile ? logoFile.name : "Clique para selecionar (JPG, PNG ou WebP; mínimo 256 px)"}</span>
                   </label>
                 </>
               )}

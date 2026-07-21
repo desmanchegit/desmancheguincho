@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import sharp from "sharp";
 import * as storage from "../storage";
 import * as schema from "@workspace/db/schema";
 import * as asaas from "../asaas";
@@ -58,6 +59,20 @@ const upload = multer({
       cb(null, true);
     } else {
       cb(new Error('Tipo de arquivo não permitido. Use PDF, JPG, PNG ou WebP.'));
+    }
+  },
+});
+
+const logoUpload = multer({
+  storage: uploadStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [".jpg", ".jpeg", ".png", ".webp"];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Envie uma imagem JPG, PNG ou WebP."));
     }
   },
 });
@@ -176,6 +191,15 @@ function removeUploadedGuinchoPhoto(file?: Express.Multer.File) {
     fs.unlinkSync(file.path);
   } catch (error: any) {
     if (error?.code !== "ENOENT") console.error("Could not remove guincho photo after failed request:", error);
+  }
+}
+
+function removeUploadedPublicFile(file?: Express.Multer.File) {
+  if (!file?.path) return;
+  try {
+    fs.unlinkSync(file.path);
+  } catch (error: any) {
+    if (error?.code !== "ENOENT") console.error("Could not remove uploaded public file after failed request:", error);
   }
 }
 
@@ -2049,6 +2073,56 @@ export async function registerRoutes(app: Express) {
     } catch (error) {
       console.error("Upload error:", error);
       res.status(500).json({ message: "Erro ao fazer upload" });
+    }
+  });
+
+  // Keep the original logo and generate a consistent, lightweight image for platform displays.
+  app.post("/api/desmanches/logo", authMiddleware, requireType(["desmanche"]), (req, res, next) => {
+    logoUpload.single("file")(req, res, (err) => {
+      if (err instanceof multer.MulterError) return res.status(400).json({ message: `Erro no upload: ${err.message}` });
+      if (err) return res.status(400).json({ message: err.message });
+      next();
+    });
+  }, async (req, res) => {
+    const original = req.file;
+    let standardizedPath: string | undefined;
+    try {
+      if (!original) return res.status(400).json({ message: "Nenhuma logo enviada" });
+
+      const metadata = await sharp(original.path).metadata();
+      if (!metadata.width || !metadata.height || (metadata.width < 256 && metadata.height < 256)) {
+        removeUploadedPublicFile(original);
+        return res.status(400).json({ message: "Envie uma logo com pelo menos 256 pixels em um dos lados." });
+      }
+
+      const standardizedFilename = `${path.parse(original.filename).name}-display.webp`;
+      standardizedPath = path.join(publicUploadsDir, standardizedFilename);
+      await sharp(original.path)
+        .rotate()
+        .resize(512, 512, {
+          fit: "contain",
+          withoutEnlargement: true,
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        })
+        .webp({ quality: 90, alphaQuality: 100 })
+        .toFile(standardizedPath);
+
+      res.json({
+        url: `/uploads/${standardizedFilename}`,
+        originalUrl: `/uploads/${original.filename}`,
+        width: 512,
+        height: 512,
+        format: "webp",
+      });
+    } catch (error) {
+      removeUploadedPublicFile(original);
+      if (standardizedPath) {
+        try { fs.unlinkSync(standardizedPath); } catch (cleanupError: any) {
+          if (cleanupError?.code !== "ENOENT") console.error("Could not remove standardized logo after failed request:", cleanupError);
+        }
+      }
+      console.error("Logo upload error:", error);
+      res.status(400).json({ message: "Não foi possível processar a logo. Envie uma imagem JPG, PNG ou WebP válida." });
     }
   });
   
